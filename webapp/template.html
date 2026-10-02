@@ -1,0 +1,604 @@
+<title>Аудит истории болезни</title>
+<style>
+/* Layout: одна колонка, три шага (загрузка, проверка текста, экспертиза). Спокойная клиническая палитра, акцент приглушённый бирюзовый. */
+:root {
+  --bg: #f4f6f6;
+  --surface: #ffffff;
+  --fg: #16231f;
+  --muted: #5a6b66;
+  --line: #d5dedb;
+  --accent: #0f5c63;
+  --accent-fg: #ffffff;
+  --accent-soft: #dcecec;
+  --z1: #a3262a;
+  --z1-soft: #f6dedd;
+  --z2: #8a5a00;
+  --z2-soft: #f7e8c8;
+  --n: #3d5a73;
+  --n-soft: #dde8f0;
+  --ok: #1f6b3a;
+  --ok-soft: #dcefe2;
+  --warn-bg: #fbf1d8;
+  --font-display: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1816; --surface: #17231f; --fg: #e3ece9; --muted: #92a69f; --line: #2b3d38;
+    --accent: #5cc0c8; --accent-fg: #0a1a1b; --accent-soft: #17383b;
+    --z1: #ff8c8f; --z1-soft: #3b1d1e; --z2: #f0bd5c; --z2-soft: #3a2c10;
+    --n: #8cb4d4; --n-soft: #1b2c3a; --ok: #7fd09a; --ok-soft: #14301f; --warn-bg: #2f2812;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1816; --surface: #17231f; --fg: #e3ece9; --muted: #92a69f; --line: #2b3d38;
+  --accent: #5cc0c8; --accent-fg: #0a1a1b; --accent-soft: #17383b;
+  --z1: #ff8c8f; --z1-soft: #3b1d1e; --z2: #f0bd5c; --z2-soft: #3a2c10;
+  --n: #8cb4d4; --n-soft: #1b2c3a; --ok: #7fd09a; --ok-soft: #14301f; --warn-bg: #2f2812;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.55; padding-inline: 16px; padding-block: 24px 64px; }
+.wrap { max-width: 880px; margin-inline: auto; display: flex; flex-direction: column; gap: 20px; }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: 1.9rem; line-height: 1.15; margin: 0; text-wrap: balance; }
+.lead { color: var(--muted); margin: 6px 0 0; max-width: 62ch; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.card h2 { font-family: var(--font-display); font-weight: 600; font-size: 1.15rem; margin: 0; display: flex; align-items: baseline; gap: 10px; }
+.step { font-family: var(--font-mono); font-size: .75rem; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 1px 6px; letter-spacing: .04em; }
+.notice { background: var(--warn-bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-size: .9rem; }
+.notice strong { font-weight: 600; }
+.drop { border: 1.5px dashed var(--accent); border-radius: 10px; padding: 22px 16px; text-align: center; background: var(--accent-soft); cursor: pointer; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.drop.over { background: var(--surface); }
+.drop b { font-weight: 600; }
+.drop small { color: var(--muted); }
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 200px; min-width: 0; }
+label, .label { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 500; }
+input[type=text], textarea { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; width: 100%; min-width: 0; }
+textarea { font-family: var(--font-mono); font-size: .82rem; line-height: 1.45; min-height: 260px; resize: vertical; }
+input:focus-visible, textarea:focus-visible, button:focus-visible, .drop:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button { font: inherit; font-weight: 500; border-radius: 6px; border: 1px solid var(--accent); padding: 9px 16px; cursor: pointer; background: var(--accent); color: var(--accent-fg); }
+button.ghost { background: transparent; color: var(--accent); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.status { font-size: .88rem; color: var(--muted); }
+.status.err { color: var(--z1); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-size: .8rem; padding: 3px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: .92rem; text-transform: none; letter-spacing: 0; color: var(--fg); font-weight: 400; }
+.check input { margin-top: 4px; }
+.progress { display: flex; flex-direction: column; gap: 6px; }
+.bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s ease; }
+.report { border-top: 1px solid var(--line); padding-top: 14px; overflow-wrap: anywhere; }
+.report h1, .report h2, .report h3, .report h4 { font-family: var(--font-display); line-height: 1.25; text-wrap: balance; }
+.report h1 { font-size: 1.35rem; margin: 1.6em 0 .5em; }
+.report h2 { font-size: 1.15rem; margin: 1.5em 0 .5em; }
+.report h3 { font-size: 1rem; margin: 1.3em 0 .4em; }
+.report h4 { font-size: .95rem; margin: 1.1em 0 .3em; }
+.report p { margin: .5em 0; max-width: 78ch; }
+.report ul, .report ol { margin: .4em 0; padding-left: 1.3em; }
+.report li { margin: .2em 0; }
+.report hr { border: 0; border-top: 1px solid var(--line); margin: 1.4em 0; }
+.tablewrap { overflow-x: auto; margin: .8em 0; max-width: 100%; }
+.report table { border-collapse: collapse; font-size: .86rem; min-width: 100%; }
+.report th, .report td { border: 1px solid var(--line); padding: 6px 9px; vertical-align: top; text-align: left; }
+.report th { background: var(--bg); font-weight: 600; }
+.report blockquote { margin: .6em 0; padding: 4px 12px; border-left: 3px solid var(--line); color: var(--muted); }
+.report code { font-family: var(--font-mono); font-size: .85em; background: var(--bg); padding: 1px 4px; border-radius: 3px; }
+.pill { display: inline-block; font-family: var(--font-mono); font-size: .8em; font-weight: 500; padding: 0 6px; border-radius: 4px; white-space: nowrap; }
+.pill.z1 { background: var(--z1-soft); color: var(--z1); }
+.pill.z2 { background: var(--z2-soft); color: var(--z2); }
+.pill.n { background: var(--n-soft); color: var(--n); }
+.counters { display: flex; gap: 10px; flex-wrap: wrap; }
+.counter { display: flex; flex-direction: column; border-radius: 8px; padding: 8px 14px; min-width: 88px; }
+.counter b { font-family: var(--font-mono); font-size: 1.5rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.counter span { font-size: .75rem; }
+.counter.z1 { background: var(--z1-soft); color: var(--z1); }
+.counter.z2 { background: var(--z2-soft); color: var(--z2); }
+.counter.n { background: var(--n-soft); color: var(--n); }
+details summary { cursor: pointer; font-weight: 500; }
+.foot { font-size: .8rem; color: var(--muted); max-width: 70ch; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Аудит истории болезни</h1>
+    <p class="lead">Загрузите историю болезни по гематологии в PDF. Страница извлечёт текст, закроет типовые идентификаторы и подготовит развёрнутый отчёт и проект заключения по правилам навыка hematology-chart-audit.</p>
+  </header>
+
+  <div class="notice" role="note">
+    <strong>Вспомогательный разбор.</strong> Итоговое заключение выносит врач-эксперт. Расчёты и пороги в отчёте помечены «требует сверки», внешние источники страница не открывает. Текст истории уходит в Claude с вашего аккаунта и расходует ваш лимит. Страница ничего не сохраняет после закрытия.
+  </div>
+
+  <section class="card" id="s1">
+    <h2><span class="step">1</span> Файл истории болезни</h2>
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Выбрать PDF">
+      <b>Перетащите PDF сюда или нажмите, чтобы выбрать</b>
+      <small>Нужен PDF с текстовым слоем. Сканы и фото пока не читаются: вставьте текст вручную ниже.</small>
+    </div>
+    <input id="file" type="file" accept="application/pdf,.pdf" hidden>
+    <div class="status" id="fileStatus" aria-live="polite"></div>
+  </section>
+
+  <section class="card" id="s2">
+    <h2><span class="step">2</span> Проверка текста</h2>
+    <p style="margin:0;color:var(--muted)">Это единственный текст, который будет отправлен. Закройте вручную то, что программа не нашла: ФИО пациента и врачей, дату рождения, адрес, место работы.</p>
+    <div class="chips" id="masked" aria-live="polite"></div>
+    <div class="field">
+      <label for="text">Текст истории болезни</label>
+      <textarea id="text" spellcheck="false" placeholder="Здесь появится текст из PDF. Можно вставить текст сюда вручную."></textarea>
+    </div>
+    <div class="status" id="textInfo"></div>
+    <div class="row">
+      <div class="field">
+        <label for="expNo">Номер экспертизы (необязательно)</label>
+        <input id="expNo" type="text" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="histNo">Номер истории болезни (необязательно)</label>
+        <input id="histNo" type="text" autocomplete="off">
+      </div>
+    </div>
+    <label class="check" for="confirm">
+      <input id="confirm" type="checkbox">
+      <span>Я проверил текст: прямых идентификаторов пациента и персонала в нём нет, отправка в Claude разрешена правилами моей организации.</span>
+    </label>
+    <div class="actions">
+      <button id="run" disabled>Подготовить экспертизу</button>
+      <button id="stop" class="ghost" hidden>Остановить</button>
+      <span class="status" id="runStatus" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <section class="card" id="s3" hidden>
+    <h2><span class="step">3</span> Экспертиза</h2>
+    <div class="progress">
+      <div class="bar" aria-hidden="true"><i id="barFill"></i></div>
+      <div class="status" id="phase" aria-live="polite"></div>
+    </div>
+    <div class="counters" id="counters" hidden></div>
+    <div class="actions" id="saveRow" hidden>
+      <button id="saveMd" class="ghost">Сохранить .md</button>
+      <button id="saveDoc" class="ghost">Сохранить в Word (.docx)</button>
+      <button id="copy" class="ghost">Копировать текст</button>
+      <span class="status" id="saveStatus" aria-live="polite"></span>
+    </div>
+    <div class="report" id="report"></div>
+  </section>
+
+  <p class="foot">Правила: навык hematology-chart-audit (классы находок З1, З2, Н; разделы аудита; системные причины; проект заключения СППВЭ). Это внутренняя форма, не утверждённая МЗ РК. Фамилии, подписи и решение в заключение вносит человек.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script type="application/json" id="skill-data">__SKILL_JSON__</script>
+<script>
+(function () {
+  "use strict";
+  var PARTS = JSON.parse(document.getElementById("skill-data").textContent).parts;
+  var MAX_CHARS = 800000;
+  var SET_A = ["SKILL.md", "references/sections.md", "references/classification.md", "references/deidentification.md", "references/self-check.md", "references/normative-rk.md", "references/sources.md"];
+  var SET_B = ["SKILL.md", "references/classification.md", "references/systemic-analysis.md", "references/report-structure.md", "references/self-check.md", "references/normative-rk.md", "references/sources.md", "template"];
+  var enc = new TextEncoder();
+  function bytes(t) { return enc.encode(t).length; }
+  function skillText(names) { return names.map(function (n) { return "=== ФАЙЛ НАВЫКА: " + n + " ===\n" + PARTS[n]; }).join("\n\n"); }
+  var maxBytes = 262144;
+  var $ = function (id) { return document.getElementById(id); };
+  var els = { drop: $("drop"), file: $("file"), fileStatus: $("fileStatus"), text: $("text"), masked: $("masked"),
+    textInfo: $("textInfo"), confirm: $("confirm"), run: $("run"), stop: $("stop"), runStatus: $("runStatus"),
+    s3: $("s3"), phase: $("phase"), bar: $("barFill"), report: $("report"), counters: $("counters"),
+    saveRow: $("saveRow"), saveStatus: $("saveStatus"), expNo: $("expNo"), histNo: $("histNo") };
+  var sample = null, downloads = null, ctl = null, fullText = "";
+
+  // ---------- Capabilities ----------
+  (async function () {
+    try { sample = await window.claude.use("sample"); } catch (e) { sample = null; }
+    try { downloads = await window.claude.use("downloads"); } catch (e) { downloads = null; }
+    if (!sample) {
+      els.runStatus.textContent = "Запуск экспертизы доступен только при открытии страницы в Claude.";
+      els.runStatus.className = "status err";
+    }
+    if (!downloads) { $("saveMd").hidden = true; $("saveDoc").hidden = true; }
+    try { var lim = await sample.limits(); if (lim && lim.maxPromptBytes) maxBytes = lim.maxPromptBytes; } catch (e) {}
+    refresh();
+  })();
+
+  // ---------- PDF extraction ----------
+  try { pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; } catch (e) {}
+
+  async function extractPdf(file) {
+    var buf = await file.arrayBuffer();
+    var pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    var pages = [];
+    for (var i = 1; i <= pdf.numPages; i++) {
+      els.fileStatus.textContent = "Читаю страницу " + i + " из " + pdf.numPages + "…";
+      var page = await pdf.getPage(i);
+      var content = await page.getTextContent();
+      var lines = [], lastY = null, cur = "";
+      content.items.forEach(function (it) {
+        var y = Math.round(it.transform[5]);
+        if (lastY !== null && Math.abs(y - lastY) > 3) { lines.push(cur); cur = ""; }
+        cur += (cur && !/\s$/.test(cur) && it.str && !/^\s/.test(it.str) ? " " : "") + it.str;
+        lastY = y;
+      });
+      if (cur) lines.push(cur);
+      pages.push(lines.join("\n"));
+    }
+    return { pages: pages, text: pages.join("\n\n") };
+  }
+
+  async function handleFile(file) {
+    if (!file) return;
+    els.fileStatus.className = "status";
+    els.fileStatus.textContent = "Читаю файл «" + file.name.replace(/[^\wА-Яа-яЁё .\-]/g, "") + "»…";
+    try {
+      var r = await extractPdf(file);
+      var perPage = r.text.length / Math.max(1, r.pages.length);
+      if (r.text.replace(/\s/g, "").length < 200 || perPage < 150) {
+        els.fileStatus.className = "status err";
+        els.fileStatus.textContent = "В файле почти нет текстового слоя (вероятно, скан). Вставьте текст вручную в поле ниже или распознайте файл заранее.";
+        els.text.value = r.text;
+      } else {
+        els.fileStatus.textContent = "Готово: " + r.pages.length + " стр., " + r.text.length.toLocaleString("ru-RU") + " знаков.";
+        els.text.value = r.text;
+      }
+      applyMask();
+    } catch (e) {
+      els.fileStatus.className = "status err";
+      els.fileStatus.textContent = "Не удалось прочитать PDF. Вставьте текст вручную.";
+    }
+    els.confirm.checked = false;
+    refresh();
+  }
+
+  els.drop.addEventListener("click", function () { els.file.click(); });
+  els.drop.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); els.file.click(); } });
+  els.file.addEventListener("change", function () { handleFile(els.file.files[0]); });
+  ["dragenter", "dragover"].forEach(function (n) { els.drop.addEventListener(n, function (e) { e.preventDefault(); els.drop.classList.add("over"); }); });
+  ["dragleave", "drop"].forEach(function (n) { els.drop.addEventListener(n, function (e) { e.preventDefault(); els.drop.classList.remove("over"); }); });
+  els.drop.addEventListener("drop", function (e) { var f = e.dataTransfer && e.dataTransfer.files[0]; handleFile(f); });
+
+  // ---------- Masking of typical identifiers ----------
+  function applyMask() {
+    var t = els.text.value, counts = { iin: 0, phone: 0, mail: 0, doc: 0 };
+    t = t.replace(/(?<![\d])\d{12}(?![\d])/g, function () { counts.iin++; return "[ИИН закрыт]"; });
+    t = t.replace(/(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/g, function () { counts.phone++; return "[телефон закрыт]"; });
+    t = t.replace(/[\w.+\-]+@[\w\-]+\.[\w.\-]+/g, function () { counts.mail++; return "[почта закрыта]"; });
+    t = t.replace(/(Удостоверение личности|Паспорт)[^\n]{0,40}\d{6,}/gi, function (m, a) { counts.doc++; return a + " [номер закрыт]"; });
+    els.text.value = t;
+    var chips = [];
+    if (counts.iin) chips.push("ИИН: " + counts.iin);
+    if (counts.phone) chips.push("телефоны: " + counts.phone);
+    if (counts.mail) chips.push("почта: " + counts.mail);
+    if (counts.doc) chips.push("документы: " + counts.doc);
+    els.masked.innerHTML = "";
+    if (chips.length) { var s = document.createElement("span"); s.className = "status"; s.textContent = "Закрыто автоматически:"; els.masked.appendChild(s); }
+    chips.forEach(function (c) { var s = document.createElement("span"); s.className = "chip"; s.textContent = c; els.masked.appendChild(s); });
+  }
+
+  function refresh() {
+    var len = els.text.value.trim().length;
+    var over = len > MAX_CHARS;
+    els.textInfo.className = "status" + (over ? " err" : "");
+    var mode = "";
+    if (len && !over) { mode = auditBudget() >= bytes(els.text.value.trim()) ? " Текст помещается целиком: разбор по полному тексту." : " Текст длиннее лимита одного запроса: страница сначала сожмёт его по частям, сохраняя дозы, время и лабораторные значения. Детали могут потеряться, проверяйте результат."; }
+    els.textInfo.textContent = len ? (len.toLocaleString("ru-RU") + " знаков." + (over ? " Слишком длинный текст: оставьте не более " + MAX_CHARS.toLocaleString("ru-RU") + "." : mode)) : "";
+    els.run.disabled = !(sample && len > 300 && !over && els.confirm.checked && !ctl);
+  }
+  els.text.addEventListener("input", function () { els.confirm.checked = false; refresh(); });
+  els.confirm.addEventListener("change", refresh);
+  els.text.addEventListener("change", function () { applyMask(); refresh(); });
+
+  // ---------- Size budget and digest ----------
+  var SKILL_A_BYTES = bytes(skillText(SET_A));
+  function auditBudget() { return Math.floor(maxBytes * 0.97) - SKILL_A_BYTES - 6000; }
+
+  function chunkText(t, maxChars) {
+    var paras = t.split(/\n/), chunks = [], cur = "";
+    paras.forEach(function (p) {
+      if (cur.length + p.length + 1 > maxChars && cur) { chunks.push(cur); cur = ""; }
+      while (p.length > maxChars) { chunks.push(p.slice(0, maxChars)); p = p.slice(maxChars); }
+      cur += (cur ? "\n" : "") + p;
+    });
+    if (cur) chunks.push(cur);
+    return chunks;
+  }
+
+  function digestPrompt(chunk, i, n) {
+    return "Ты готовишь рабочую выжимку части " + i + " из " + n + " истории болезни по гематологии для последующего аудита. Сократи текст, ничего не оценивая и не интерпретируя.\n" +
+      "Сохраняй ДОСЛОВНО и ПОЛНОСТЬЮ: даты и время событий, дни, названия препаратов, дозы, пути и режимы введения, единицы, лабораторные и инструментальные значения (в таблицах сохраняй строки и столбцы), диагнозы и формулировки диагноза, назначения и отмены, трансфузии (компонент, группа, дозы), явные записи об отсутствии или невыполнении («не выполнялось», «не значится», «не проводилось», «не представлено»), расхождения между разделами, записи об осложнениях, осмотрах, консультациях, согласиях, исходе. Сохраняй заголовки разделов и порядок записей.\n" +
+      "Удаляй: повторяющиеся шаблонные фразы, колонтитулы, номера страниц, пустые поля, дубли одинаковых записей (но если два дневника в разные дни дословно совпадают, пометь это словами «[текст дословно совпадает с записью от <дата>]»).\n" +
+      "Если какой-то фрагмент неразборчив, пометь [нечитаемо]. Не добавляй свои выводы. Ответ: только выжимка, не более 18 000 знаков, по-русски.\n\n=== ЧАСТЬ " + i + " ИЗ " + n + " ===\n" + chunk + "\n=== КОНЕЦ ЧАСТИ ===";
+  }
+
+  async function digestAll(text, signal, setPhase, setBar) {
+    var round = 0, orig = text.length;
+    while (bytes(text) > auditBudget() && round < 3) {
+      round++;
+      var chunks = chunkText(text, 55000), outs = [];
+      for (var k = 0; k < chunks.length; k++) {
+        setPhase("Сжатие текста, проход " + round + ": часть " + (k + 1) + " из " + chunks.length + ".");
+        setBar(4 + (k / chunks.length) * 14);
+        var r = await sample(digestPrompt(chunks[k], k + 1, chunks.length), { signal: signal, modelTier: "default", cache: false });
+        outs.push("--- часть " + (k + 1) + " ---\n" + r.text);
+      }
+      text = outs.join("\n\n");
+    }
+    return { text: text, digest: true, from: orig, to: text.length, fits: bytes(text) <= auditBudget() };
+  }
+
+  // ---------- Prompts ----------
+  function today() { var d = new Date(); return ("0" + d.getDate()).slice(-2) + "." + ("0" + (d.getMonth() + 1)).slice(-2) + "." + d.getFullYear(); }
+
+  function common(chart, names) {
+    return [
+      "Ты выполняешь ретроспективный аудит истории болезни по гематологии строго по правилам навыка hematology-chart-audit. Ниже полный текст навыка (SKILL.md, references, шаблон заключения). Следуй им; при конфликте приоритет у classification.md и sections.md.",
+      "",
+      skillText(names),
+      "",
+      "=== ОГРАНИЧЕНИЯ СРЕДЫ ===",
+      "- Интернета и файлов нет. Внешние источники НЕ открывались: все эталоны, дозы, пороги, пункты нормативов помечай «из памяти модели, требует сверки», статус источников «требует сверки». Не выдумывай ссылки, DOI, PMID, пункты приказов.",
+      "- Идентификаторы пациента и персонала не включай. Календарные даты в вывод не включай: переводи в Д0 (день поступления), Д+N. Допустимы только номер экспертизы, дата проверки, номер истории болезни.",
+      "- Материалы могут быть выдержками: «не найдено ≠ не сделано» (правила в classification.md). Если время события не указано, интервал не считай. Каждый интервал и расчёт пересчитай и пометь «расчёт аудитора, требует проверки врачом».",
+      "- Отвечай по-русски, оформляй markdown: заголовки #, таблицы, списки. Пиши все коды находок в виде З1-01, З2-01, Н-01.",
+      "- Реквизиты: номер экспертизы: " + (els.expNo.value.trim() || "не присвоен (вносит человек)") + "; дата проверки: " + today() + "; № истории болезни: " + (els.histNo.value.trim() || "не указан") + ".",
+      "",
+      chart === null ? "" : ("=== ТЕКСТ ИСТОРИИ БОЛЕЗНИ" + (chart.digest ? " (СЖАТАЯ ВЫЖИМКА: исходный текст сокращён по частям; дозы, время и значения сохранены дословно, но отдельные детали могли быть опущены; не делай выводов об отсутствии записи по выжимке, помечай такие случаи «требует уточнения»)" : "") + " ===\n" + chart.text + "\n=== КОНЕЦ ТЕКСТА ИСТОРИИ БОЛЕЗНИ ===")
+    ].join("\n");
+  }
+
+  function promptA(chart) {
+    return common(chart, SET_A) + "\n\n=== ЗАДАНИЕ (ЧАСТЬ 1 ИЗ 2) ===\n" +
+      "Выполни шаги навыка 1–9 и подготовь ПЕРВУЮ часть Приложения 1. Структура ответа:\n" +
+      "# ПРИЛОЖЕНИЕ 1. АНАЛИТИЧЕСКИЙ ОТЧЁТ АУДИТА (часть 1)\n" +
+      "0. Срочный блок (только если случай текущий и есть угроза жизни; иначе одна строка «не требуется»).\n" +
+      "1. Шапка (реквизиты, возраст и профиль, диагноз с кодом МКБ-10, этап, исход, период, доступные и отсутствующие материалы).\n" +
+      "2. Краткое резюме и счётчик З1 / З2 / Н и итоговая оценка тактики.\n" +
+      "3. Хронология в днях Д0…Д+N с таблицей интервалов.\n" +
+      "4. Аудит по разделам 1–4 (и раздел 5 полностью, только если пациент умер): «соответствует», находки, «требует уточнения». Таблица альтернативных методик и итоговая оценка тактики по определениям sections.md.\n" +
+      "5. Находки подробно: для каждой код, раздел, что выявлено (со ссылкой на день), эталон со статусом, влияние на исход, уверенность, как следовало поступить. Сначала З1, затем З2, затем Н.\n" +
+      "В самом конце выведи строку «РЕЕСТР НАХОДОК» и список «код — класс — раздел — суть в 5–8 словах». Не пиши частей 6 и далее: они будут в следующем запросе. Перед выдачей выполни самопроверку из self-check.md (арифметика, единицы, согласованность, обезличивание).";
+  }
+
+  function promptB(partA) {
+    return common(null, SET_B) + "\n\n=== ПЕРВАЯ ЧАСТЬ ОТЧЁТА (уже подготовлена, не переписывай; она содержит хронологию и все находки с привязкой к дням, текст истории болезни здесь не приводится) ===\n" + partA + "\n=== КОНЕЦ ПЕРВОЙ ЧАСТИ ===\n\n=== ЗАДАНИЕ (ЧАСТЬ 2 ИЗ 2) ===\n" +
+      "Продолжи отчёт: подготовь вторую часть, опираясь на реестр находок первой части. Не добавляй и не удаляй находки, не меняй классы и счётчик. Структура ответа:\n" +
+      "# ПРИЛОЖЕНИЕ 1 (часть 2)\n" +
+      "6. Анализ системности ошибок: таблица корневых причин (уровень, повторяемость, связь с исходом, коды), цепочки ошибок с точками прерывания, рекомендации по устранению причин.\n" +
+      "7. Вопросы лечащему врачу.\n" +
+      "8. Рекомендации (врачу, отделению, системе).\n" +
+      "9. Источники в самом конце: таблица (источник, год, раздел, ссылка, статус); все со статусом «требует сверки».\n" +
+      "10. Ограничения аудита.\n" +
+      "# ПРОЕКТ ЗАКЛЮЧЕНИЯ (по шаблону СППВЭ)\n" +
+      "Заполни только разделы 1–6 шаблона (при нелетальном исходе раздел 6 не заполняется). ФИО эксперта, подписи, раздел «Решение и рекомендации» оставь пустыми для человека. Ключевых дефектов не более 5. Для летального случая статус «предварительное», если нет заключения ПАО.\n" +
+      "# КРАТКОЕ РЕЗЮМЕ (до 25 строк, без идентификаторов)\n" +
+      "Перед выдачей выполни самопроверку из self-check.md; счётчик в заключении должен совпасть с реестром первой части.";
+  }
+
+  // ---------- Markdown rendering ----------
+  function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function inline(s) {
+    s = esc(s);
+    s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:]|$)/g, "$1<em>$2</em>");
+    s = s.replace(/(^|[^A-Za-zА-Яа-яЁё0-9_])(З1|З2)-(\d+)(?!\d)/g, function (m, pre, c, d) { return pre + '<span class="pill ' + (c === "З1" ? "z1" : "z2") + '">' + c + "-" + d + "</span>"; });
+    s = s.replace(/(^|[^A-Za-zА-Яа-яЁё0-9_])Н-(\d+)(?!\d)/g, '$1<span class="pill n">Н-$2</span>');
+    return s;
+  }
+  function cells(line) { return line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map(function (c) { return c.trim(); }); }
+  function md(src) {
+    var lines = src.replace(/\r/g, "").split("\n"), out = [], i = 0, list = null;
+    function closeList() { if (list) { out.push("</" + list + ">"); list = null; } }
+    while (i < lines.length) {
+      var l = lines[i];
+      if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < lines.length && /^\s*\|[\s:\-|]+\|\s*$/.test(lines[i + 1])) {
+        closeList();
+        var head = cells(l); i += 2; var rows = [];
+        while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(cells(lines[i])); i++; }
+        var h = "<div class=\"tablewrap\"><table><thead><tr>" + head.map(function (c) { return "<th>" + inline(c) + "</th>"; }).join("") + "</tr></thead><tbody>";
+        rows.forEach(function (r) { h += "<tr>" + r.map(function (c) { return "<td>" + inline(c) + "</td>"; }).join("") + "</tr>"; });
+        out.push(h + "</tbody></table></div>"); continue;
+      }
+      var m;
+      if ((m = l.match(/^(#{1,4})\s+(.*)$/))) { closeList(); out.push("<h" + m[1].length + ">" + inline(m[2]) + "</h" + m[1].length + ">"); }
+      else if (/^\s*(-{3,}|\*{3,})\s*$/.test(l)) { closeList(); out.push("<hr>"); }
+      else if ((m = l.match(/^\s*[-*•]\s+(.*)$/))) { if (list !== "ul") { closeList(); out.push("<ul>"); list = "ul"; } out.push("<li>" + inline(m[1]) + "</li>"); }
+      else if ((m = l.match(/^\s*\d+[.)]\s+(.*)$/))) { if (list !== "ol") { closeList(); out.push("<ol>"); list = "ol"; } out.push("<li>" + inline(m[1]) + "</li>"); }
+      else if ((m = l.match(/^>\s?(.*)$/))) { closeList(); out.push("<blockquote>" + inline(m[1]) + "</blockquote>"); }
+      else if (!l.trim()) { closeList(); }
+      else { closeList(); out.push("<p>" + inline(l) + "</p>"); }
+      i++;
+    }
+    closeList();
+    return out.join("\n");
+  }
+
+  var pending = false;
+  function render(text) {
+    if (pending) return; pending = true;
+    requestAnimationFrame(function () { pending = false; els.report.innerHTML = md(text); });
+  }
+
+  function showCounters(text) {
+    var m = text.match(/З1\s*[=:]\s*(\d+)\s*\/\s*З2\s*[=:]\s*(\d+)\s*\/\s*Н\s*[=:]\s*(\d+)/);
+    if (!m) { var a = (text.match(/Счётчик[^\n]*/) || [""])[0].match(/(\d+)\D+(\d+)\D+(\d+)/); if (a) m = a; }
+    if (!m) return;
+    els.counters.hidden = false;
+    els.counters.innerHTML = '<div class="counter z1"><b>' + m[1] + '</b><span>значимые З1</span></div><div class="counter z2"><b>' + m[2] + '</b><span>значимые З2</span></div><div class="counter n"><b>' + m[3] + '</b><span>незначимые</span></div>';
+  }
+
+  // ---------- Run ----------
+  function errText(e) {
+    var c = e && e.code;
+    if (c === "not_granted") return "Доступ к Claude не разрешён. Разрешите запрос и запустите снова.";
+    if (c === "too_big") return "Текст слишком большой даже после сжатия: " + (e.message || "") + ".";
+    if (c === "prompt_too_large") return "Запрос превысил лимит размера. Сократите текст или разделите историю на части.";
+    if (c === "rate_limited") return "Слишком много запросов. Подождите минуту и повторите.";
+    if (c === "cancelled") return "Остановлено.";
+    return "Не удалось получить ответ" + (e && e.message ? ": " + e.message : "") + ".";
+  }
+
+  els.run.addEventListener("click", async function () {
+    if (!sample) return;
+    var chart = els.text.value.trim();
+    ctl = new AbortController();
+    els.run.disabled = true; els.stop.hidden = false; els.s3.hidden = false;
+    els.saveRow.hidden = true; els.counters.hidden = true; els.report.innerHTML = "";
+    els.runStatus.textContent = ""; els.bar.style.width = "4%";
+    els.s3.scrollIntoView({ behavior: "smooth", block: "start" });
+    var partA = "", partB = "", note = "";
+    try {
+      var chartObj = { text: chart, digest: false };
+      if (bytes(chart) > auditBudget()) {
+        chartObj = await digestAll(chart, ctl.signal, function (t) { els.phase.textContent = t; }, function (v) { els.bar.style.width = v + "%"; });
+        if (!chartObj.fits) { throw { code: "too_big", message: "текст не удалось сжать до лимита, разделите историю на части" }; }
+        note = "> Исходный текст (" + chartObj.from.toLocaleString("ru-RU") + " знаков) был сжат до выжимки (" + chartObj.to.toLocaleString("ru-RU") + " знаков), потому что не помещался в один запрос. Дозы, время и значения сохранялись дословно, но отдельные детали могли быть опущены. Выводы об отсутствии записей и тонкие несоответствия проверьте по исходной истории.\n\n";
+      }
+      els.phase.textContent = "Часть 1 из 2: диагностика, хронология, находки. Это занимает несколько минут.";
+      var a = await sample(promptA(chartObj), { signal: ctl.signal, modelTier: "complex", cache: false,
+        onText: function (o) { partA = o.text; render(note + partA); els.bar.style.width = Math.min(45, 4 + partA.length / 400) + "%"; } });
+      partA = a.text; render(note + partA); els.bar.style.width = "50%";
+      showCounters(partA);
+      els.phase.textContent = "Часть 2 из 2: системные причины, рекомендации, проект заключения.";
+      var b = await sample(promptB(partA), { signal: ctl.signal, modelTier: "complex", cache: false,
+        onText: function (o) { partB = o.text; render(note + partA + "\n\n" + partB); els.bar.style.width = Math.min(97, 50 + partB.length / 350) + "%"; } });
+      partB = b.text; fullText = note + partA + "\n\n" + partB; render(fullText);
+      showCounters(partB); if (els.counters.hidden) showCounters(partA);
+      els.bar.style.width = "100%";
+      els.phase.textContent = (a.truncated || b.truncated) ? "Готово, но ответ обрезан: часть текста может отсутствовать." : "Готово. Проверьте расчёты и классы: итог за экспертом.";
+      els.saveRow.hidden = false;
+    } catch (e) {
+      var kept = (e && e.text) || "";
+      if (kept) { fullText = note + (partA ? partA + "\n\n" + kept : kept); render(fullText); els.saveRow.hidden = false; }
+      els.phase.textContent = errText(e);
+      els.phase.className = "status err";
+    } finally {
+      ctl = null; els.stop.hidden = true; refresh();
+    }
+  });
+  els.stop.addEventListener("click", function () { if (ctl) ctl.abort(); });
+
+  // ---------- Save ----------
+  function stamp() { return "audit-" + today().replace(/\./g, "-"); }
+  async function save(filename, data) {
+    els.saveStatus.textContent = "";
+    try {
+      var r = await downloads.save({ filename: filename, data: data });
+      els.saveStatus.textContent = r.status === "saved" ? "Сохранено." : "Передано.";
+    } catch (e) { els.saveStatus.textContent = (e && e.code === "declined") ? "Сохранение отменено." : "Не удалось сохранить."; }
+  }
+  $("saveMd").addEventListener("click", function () { save(stamp() + ".md", fullText); });
+  // ---------- DOCX export (JSZip + hand-written OOXML) ----------
+  var DW = 9638; // A4, margins 2 cm, in twips
+  function xe(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ""); }
+  function rpr(o) {
+    var x = "";
+    if (o.font) x += '<w:rFonts w:ascii="' + o.font + '" w:hAnsi="' + o.font + '" w:cs="' + o.font + '"/>';
+    if (o.b) x += "<w:b/>"; if (o.i) x += "<w:i/>";
+    if (o.color) x += '<w:color w:val="' + o.color + '"/>';
+    if (o.sz) x += '<w:sz w:val="' + o.sz + '"/><w:szCs w:val="' + o.sz + '"/>';
+    if (o.fill) x += '<w:shd w:val="clear" w:color="auto" w:fill="' + o.fill + '"/>';
+    return x ? "<w:rPr>" + x + "</w:rPr>" : "";
+  }
+  function run(t, o) { return '<w:r>' + rpr(o || {}) + '<w:t xml:space="preserve">' + xe(t) + "</w:t></w:r>"; }
+  var TOK = /(\*\*[^*]+\*\*|`[^`]+`|(?:^|(?<=[^A-Za-zА-Яа-яЁё0-9_]))(?:З1|З2|Н)-\d+(?!\d)|(?:^|(?<=[\s(]))\*[^*\s][^*]*\*(?=[\s).,;:]|$))/g;
+  function inlineRuns(text, base) {
+    base = base || {};
+    var out = "", last = 0, m;
+    TOK.lastIndex = 0;
+    while ((m = TOK.exec(text))) {
+      if (m.index > last) out += run(text.slice(last, m.index), base);
+      var tk = m[0], o = Object.assign({}, base);
+      if (tk.indexOf("**") === 0) { o.b = true; out += run(tk.slice(2, -2), o); }
+      else if (tk[0] === "`") { o.font = "Consolas"; out += run(tk.slice(1, -1), o); }
+      else if (tk[0] === "*") { o.i = true; out += run(tk.slice(1, -1), o); }
+      else { o.b = true; o.color = tk.indexOf("З1") === 0 ? "A3262A" : (tk.indexOf("З2") === 0 ? "8A5A00" : "3D5A73"); o.fill = tk.indexOf("З1") === 0 ? "F6DEDD" : (tk.indexOf("З2") === 0 ? "F7E8C8" : "DDE8F0"); out += run(tk, o); }
+      last = m.index + tk.length;
+      if (tk.length === 0) TOK.lastIndex++;
+    }
+    if (last < text.length) out += run(text.slice(last), base);
+    return out || run("", base);
+  }
+  function para(inner, ppr) { return "<w:p>" + (ppr ? "<w:pPr>" + ppr + "</w:pPr>" : "") + inner + "</w:p>"; }
+  function tableXml(head, rows) {
+    var n = head.length, wts = [];
+    for (var c = 0; c < n; c++) {
+      var mx = head[c].length; rows.forEach(function (r) { if (r[c] && r[c].length > mx) mx = r[c].length; });
+      wts.push(Math.min(70, Math.max(8, Math.sqrt(mx) * 4)));
+    }
+    var tot = wts.reduce(function (a, b) { return a + b; }, 0), ws = wts.map(function (w) { return Math.floor(DW * w / tot); });
+    var b = '<w:tblBorders>' + ["top", "left", "bottom", "right", "insideH", "insideV"].map(function (k) { return '<w:' + k + ' w:val="single" w:sz="4" w:space="0" w:color="9AA8A4"/>'; }).join("") + "</w:tblBorders>";
+    var x = '<w:tbl><w:tblPr><w:tblW w:w="' + DW + '" w:type="dxa"/>' + b + '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="70" w:type="dxa"/><w:right w:w="70" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>' + ws.map(function (w) { return '<w:gridCol w:w="' + w + '"/>'; }).join("") + "</w:tblGrid>";
+    function row(cells, hdr) {
+      var r = "<w:tr>" + (hdr ? "<w:trPr><w:tblHeader/></w:trPr>" : "");
+      for (var c = 0; c < n; c++) {
+        var t = cells[c] || "";
+        r += '<w:tc><w:tcPr><w:tcW w:w="' + ws[c] + '" w:type="dxa"/>' + (hdr ? '<w:shd w:val="clear" w:color="auto" w:fill="DCECEC"/>' : "") + "</w:tcPr>" + para(inlineRuns(t, { sz: 18, b: hdr }), '<w:spacing w:before="20" w:after="20"/>') + "</w:tc>";
+      }
+      return r + "</w:tr>";
+    }
+    x += row(head, true); rows.forEach(function (r) { x += row(r, false); });
+    return x + "</w:tbl>" + para("", '<w:spacing w:after="60"/>');
+  }
+  function mdToDocxBody(src) {
+    var lines = src.replace(/\r/g, "").split("\n"), out = [], i = 0, ol = 0, m;
+    while (i < lines.length) {
+      var l = lines[i];
+      if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < lines.length && /^\s*\|[\s:\-|]+\|\s*$/.test(lines[i + 1])) {
+        var head = cells(l); i += 2; var rows = [];
+        while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(cells(lines[i])); i++; }
+        out.push(tableXml(head, rows)); ol = 0; continue;
+      }
+      if ((m = l.match(/^(#{1,4})\s+(.*)$/))) { out.push(para(inlineRuns(m[2].replace(/\*\*/g, "")), '<w:pStyle w:val="Heading' + m[1].length + '"/>')); ol = 0; }
+      else if (/^\s*(-{3,}|\*{3,})\s*$/.test(l)) { out.push(para("", '<w:pBdr><w:bottom w:val="single" w:sz="4" w:space="1" w:color="9AA8A4"/></w:pBdr>')); ol = 0; }
+      else if ((m = l.match(/^\s*[-*•]\s+(.*)$/))) { out.push(para(run("•\t") + inlineRuns(m[1]), '<w:tabs><w:tab w:val="left" w:pos="360"/></w:tabs><w:spacing w:after="40"/><w:ind w:left="360" w:hanging="260"/>')); ol = 0; }
+      else if ((m = l.match(/^\s*(\d+)[.)]\s+(.*)$/))) { out.push(para(run(m[1] + ".\t") + inlineRuns(m[2]), '<w:tabs><w:tab w:val="left" w:pos="400"/></w:tabs><w:spacing w:after="40"/><w:ind w:left="400" w:hanging="340"/>')); }
+      else if ((m = l.match(/^>\s?(.*)$/))) { out.push(para(inlineRuns(m[1], { i: true, color: "5A6B66" }), '<w:pBdr><w:left w:val="single" w:sz="12" w:space="6" w:color="9AA8A4"/></w:pBdr><w:ind w:left="200"/>')); ol = 0; }
+      else if (!l.trim()) { /* skip */ }
+      else { out.push(para(inlineRuns(l), '<w:spacing w:after="100"/>')); ol = 0; }
+      i++;
+    }
+    return out.join("");
+  }
+  function docxFiles(body, title, meta) {
+    var NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+    var titleP = para(run(title, { b: true, sz: 36, color: "0F5C63" }), '<w:spacing w:after="60"/>') + para(run(meta, { sz: 20, color: "5A6B66" }), '<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="4" w:color="0F5C63"/></w:pBdr><w:spacing w:after="200"/>');
+    var sect = '<w:sectPr><w:footerReference w:type="default" r:id="rId2"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr>';
+    var styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles ' + NS + '><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri" w:eastAsia="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="ru-RU"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="100" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>' +
+      '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>' +
+      [[1, 32, 280], [2, 28, 240], [3, 24, 200], [4, 22, 160]].map(function (h) { return '<w:style w:type="paragraph" w:styleId="Heading' + h[0] + '"><w:name w:val="heading ' + h[0] + '"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="' + h[2] + '" w:after="100"/><w:outlineLvl w:val="' + (h[0] - 1) + '"/></w:pPr><w:rPr><w:b/><w:color w:val="0F5C63"/><w:sz w:val="' + h[1] + '"/><w:szCs w:val="' + h[1] + '"/></w:rPr></w:style>'; }).join("") + "</w:styles>";
+    var footer = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr ' + NS + '>' + para(run("Вспомогательный разбор. Итоговое заключение выносит врач-эксперт.   Стр. ", { sz: 16, color: "5A6B66" }) + '<w:r><w:rPr><w:sz w:val="16"/><w:color w:val="5A6B66"/></w:rPr><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:t>1</w:t></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:fldChar w:fldCharType="end"/></w:r>', '<w:jc w:val="center"/>') + "</w:ftr>";
+    return {
+      "[Content_Types].xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>',
+      "_rels/.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
+      "word/_rels/document.xml.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>',
+      "word/document.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' + NS + '><w:body>' + titleP + body + sect + "</w:body></w:document>",
+      "word/styles.xml": styles, "word/footer1.xml": footer
+    };
+  }
+  async function buildDocx(text) {
+    var meta = "Дата проверки: " + today() + (els.expNo.value.trim() ? "   Экспертиза № " + xe(els.expNo.value.trim()) : "") + (els.histNo.value.trim() ? "   История болезни № " + xe(els.histNo.value.trim()) : "");
+    var files = docxFiles(mdToDocxBody(text), "Экспертиза истории болезни по гематологии", meta);
+    var zip = new JSZip();
+    Object.keys(files).forEach(function (k) { zip.file(k, files[k], { createFolders: false }); });
+    return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+  }
+  $("saveDoc").addEventListener("click", async function () {
+    els.saveStatus.textContent = "";
+    if (typeof JSZip === "undefined") {
+      var html = '<html><head><meta charset="utf-8"><style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt}table{border-collapse:collapse}td,th{border:1px solid #888;padding:3px 6px;vertical-align:top}th{background:#eee}</style></head><body>' + md(fullText) + "</body></html>";
+      save(stamp() + ".doc", html); return;
+    }
+    try { var data = await buildDocx(fullText); save(stamp() + ".docx", data); }
+    catch (e) { els.saveStatus.textContent = "Не удалось собрать файл Word. Сохраните .md."; }
+  });
+  $("copy").addEventListener("click", async function () {
+    try { await navigator.clipboard.writeText(fullText); els.saveStatus.textContent = "Скопировано."; }
+    catch (e) { var r = document.createRange(); r.selectNodeContents(els.report); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); els.saveStatus.textContent = "Текст выделен: нажмите копирование."; }
+  });
+})();
+</script>
