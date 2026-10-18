@@ -106,7 +106,7 @@ details summary { cursor: pointer; font-weight: 500; }
 <div class="wrap">
   <header>
     <h1>Аудит истории болезни</h1>
-    <p class="lead">Загрузите историю болезни по гематологии в PDF. Страница извлечёт текст, закроет типовые идентификаторы и подготовит развёрнутый отчёт и проект заключения по правилам навыка hematology-chart-audit.</p>
+    <p class="lead">Загрузите историю болезни по гематологии в формате Word (.docx) или PDF. Страница извлечёт текст, закроет типовые идентификаторы и подготовит развёрнутый отчёт и проект заключения по правилам навыка hematology-chart-audit.</p>
   </header>
 
   <div class="notice" role="note">
@@ -115,11 +115,11 @@ details summary { cursor: pointer; font-weight: 500; }
 
   <section class="card" id="s1">
     <h2><span class="step">1</span> Файл истории болезни</h2>
-    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Выбрать PDF">
-      <b>Перетащите PDF сюда или нажмите, чтобы выбрать</b>
-      <small>Нужен PDF с текстовым слоем. Сканы и фото пока не читаются: вставьте текст вручную ниже.</small>
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Выбрать файл Word или PDF">
+      <b>Перетащите файл Word (.docx) или PDF сюда или нажмите, чтобы выбрать</b>
+      <small>Word (.docx), PDF с текстовым слоем или текстовый файл (.txt, .md). Старый формат .doc сохраните как .docx. Сканы и фото пока не читаются: вставьте текст вручную ниже.</small>
     </div>
-    <input id="file" type="file" accept="application/pdf,.pdf" hidden>
+    <input id="file" type="file" accept=".docx,.pdf,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,text/plain" hidden>
     <div class="status" id="fileStatus" aria-live="polite"></div>
   </section>
 
@@ -129,7 +129,7 @@ details summary { cursor: pointer; font-weight: 500; }
     <div class="chips" id="masked" aria-live="polite"></div>
     <div class="field">
       <label for="text">Текст истории болезни</label>
-      <textarea id="text" spellcheck="false" placeholder="Здесь появится текст из PDF. Можно вставить текст сюда вручную."></textarea>
+      <textarea id="text" spellcheck="false" placeholder="Здесь появится текст из файла. Можно вставить текст сюда вручную."></textarea>
     </div>
     <div class="status" id="textInfo"></div>
     <div class="row">
@@ -230,25 +230,106 @@ details summary { cursor: pointer; font-weight: 500; }
     return { pages: pages, text: pages.join("\n\n") };
   }
 
+  // ---------- Word (.docx) extraction ----------
+  var W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+  function wChildren(node, name) {
+    var r = [];
+    for (var c = node.firstChild; c; c = c.nextSibling) { if (c.nodeType === 1 && c.namespaceURI === W_NS && c.localName === name) r.push(c); }
+    return r;
+  }
+  function runsText(node) {
+    var out = "";
+    for (var c = node.firstChild; c; c = c.nextSibling) {
+      if (c.nodeType !== 1 || c.namespaceURI !== W_NS) continue;
+      var n = c.localName;
+      if (n === "t") out += c.textContent;
+      else if (n === "tab") out += "\t";
+      else if (n === "br" || n === "cr") out += "\n";
+      else if (n === "noBreakHyphen") out += "-";
+      else if (n === "pPr" || n === "rPr" || n === "delText" || n === "instrText" || n === "del" || n === "moveFrom") continue;
+      else out += runsText(c);
+    }
+    return out;
+  }
+  function tableLines(tbl, out) {
+    wChildren(tbl, "tr").forEach(function (tr) {
+      var cells = wChildren(tr, "tc").map(function (tc) {
+        var inner = [];
+        blockLines(tc, inner);
+        return inner.join(" ").replace(/\s+/g, " ").trim();
+      });
+      var line = cells.join(" | ").trim();
+      if (line.replace(/[|\s]/g, "")) out.push(line);
+    });
+  }
+  function blockLines(node, out) {
+    for (var c = node.firstChild; c; c = c.nextSibling) {
+      if (c.nodeType !== 1 || c.namespaceURI !== W_NS) continue;
+      var n = c.localName;
+      if (n === "p") out.push(runsText(c).replace(/[ \t]+$/g, ""));
+      else if (n === "tbl") tableLines(c, out);
+      else if (n === "sdt") { var sc = wChildren(c, "sdtContent")[0]; if (sc) blockLines(sc, out); }
+      else if (n === "ins" || n === "customXml" || n === "smartTag") blockLines(c, out);
+    }
+  }
+  async function extractDocx(file) {
+    if (typeof JSZip === "undefined") throw new Error("jszip");
+    var zip = await JSZip.loadAsync(await file.arrayBuffer());
+    var entry = zip.file("word/document.xml");
+    if (!entry) throw new Error("nodoc");
+    var doc = new DOMParser().parseFromString(await entry.async("string"), "application/xml");
+    if (doc.getElementsByTagName("parsererror").length) throw new Error("xml");
+    var body = doc.getElementsByTagNameNS(W_NS, "body")[0];
+    if (!body) throw new Error("nobody");
+    var lines = [];
+    blockLines(body, lines);
+    var text = lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    return { paras: lines.length, text: text };
+  }
+
   async function handleFile(file) {
     if (!file) return;
     els.fileStatus.className = "status";
     els.fileStatus.textContent = "Читаю файл «" + file.name.replace(/[^\wА-Яа-яЁё .\-]/g, "") + "»…";
     try {
-      var r = await extractPdf(file);
-      var perPage = r.text.length / Math.max(1, r.pages.length);
-      if (r.text.replace(/\s/g, "").length < 200 || perPage < 150) {
+      var ext = (file.name.split(".").pop() || "").toLowerCase();
+      if (ext === "doc" || ext === "rtf" || ext === "odt") {
         els.fileStatus.className = "status err";
-        els.fileStatus.textContent = "В файле почти нет текстового слоя (вероятно, скан). Вставьте текст вручную в поле ниже или распознайте файл заранее.";
+        els.fileStatus.textContent = "Формат ." + ext + " не читается. Сохраните файл в Word как .docx (Файл → Сохранить как) и загрузите снова.";
+        els.confirm.checked = false;
+        refresh();
+        return;
+      }
+      var r;
+      if (ext === "docx" || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        r = await extractDocx(file);
+        if (r.text.replace(/\s/g, "").length < 200) {
+          els.fileStatus.className = "status err";
+          els.fileStatus.textContent = "В документе Word почти нет текста (возможно, история вставлена картинками). Вставьте текст вручную в поле ниже.";
+        } else {
+          els.fileStatus.textContent = "Готово: " + r.paras.toLocaleString("ru-RU") + " абзацев и строк таблиц, " + r.text.length.toLocaleString("ru-RU") + " знаков. Колонтитулы, сноски и текстовые рамки не читаются.";
+        }
+        els.text.value = r.text;
+      } else if (ext === "txt" || ext === "md" || file.type === "text/plain") {
+        r = { text: await file.text() };
+        els.fileStatus.textContent = "Готово: " + r.text.length.toLocaleString("ru-RU") + " знаков.";
         els.text.value = r.text;
       } else {
-        els.fileStatus.textContent = "Готово: " + r.pages.length + " стр., " + r.text.length.toLocaleString("ru-RU") + " знаков.";
-        els.text.value = r.text;
+        r = await extractPdf(file);
+        var perPage = r.text.length / Math.max(1, r.pages.length);
+        if (r.text.replace(/\s/g, "").length < 200 || perPage < 150) {
+          els.fileStatus.className = "status err";
+          els.fileStatus.textContent = "В файле почти нет текстового слоя (вероятно, скан). Вставьте текст вручную в поле ниже или распознайте файл заранее.";
+          els.text.value = r.text;
+        } else {
+          els.fileStatus.textContent = "Готово: " + r.pages.length + " стр., " + r.text.length.toLocaleString("ru-RU") + " знаков.";
+          els.text.value = r.text;
+        }
       }
       applyMask();
     } catch (e) {
       els.fileStatus.className = "status err";
-      els.fileStatus.textContent = "Не удалось прочитать PDF. Вставьте текст вручную.";
+      els.fileStatus.textContent = "Не удалось прочитать файл. Проверьте, что это .docx или PDF с текстовым слоем, или вставьте текст вручную.";
     }
     els.confirm.checked = false;
     refresh();
