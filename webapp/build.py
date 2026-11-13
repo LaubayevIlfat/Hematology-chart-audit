@@ -18,7 +18,7 @@ for p in re.findall(r"<w:p[ >].*?</w:p>", xml, flags=re.S):
         paras.append(t.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">"))
 
 parts = {"SKILL.md": open(os.path.join(base, "SKILL.md"), encoding="utf8").read()}
-SKIP = {"fsms-defect-codes.md"}  # справочник по запросу эксперта; страница его не использует, место в лимите 256 КиБ экономим
+SKIP = {"fsms-defect-codes.md", "file-mode.md"}  # справочник по запросу эксперта; страница его не использует, место в лимите 256 КиБ экономим
 for f in sorted(os.listdir(os.path.join(base, "references"))):
     if f in SKIP:
         continue
