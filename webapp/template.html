@@ -199,16 +199,16 @@ button.small { padding: 4px 10px; font-size: .82rem; }
   }
   var PARTS = await loadParts();
   var MAX_CHARS = 800000;
-  var SET_A = ["SKILL.md", "references/sections.md", "references/classification.md", "references/deidentification.md", "references/self-check.md", "references/normative-rk.md", "references/sources.md"];
-  var SET_B = ["SKILL.md", "references/classification.md", "references/systemic-analysis.md", "references/report-structure.md", "references/self-check.md", "references/normative-rk.md", "references/sources.md", "template"];
+  var SET_A = ["SKILL.md", "references/sections.md", "references/classification.md", "references/deidentification.md", "references/self-check.md", "references/normative-rk.md", "references/sources.md", "references/clinical-digests.md"];
+  var SET_B = ["SKILL.md", "references/classification.md", "references/systemic-analysis.md", "references/report-structure.md", "references/self-check.md", "references/normative-rk.md", "references/sources.md", "references/clinical-digests.md", "template"];
   var enc = new TextEncoder();
   function bytes(t) { return enc.encode(t).length; }
   // Отбор правил classification.md: общие разделы всегда, блоки по нозологиям (с тегом «<!-- ключи: ... -->») только при совпадении с текстом истории.
-  var CLS = "references/classification.md";
-  var RULES = { key: "", text: PARTS[CLS], loaded: [], skipped: [] };
-  function selectRules(text) {
-    var low = (text || "").toLowerCase();
-    var secs = PARTS[CLS].split(/\n(?=#{2,3} )/), out = [], loaded = [], skipped = [];
+  var CLS = "references/classification.md", DIG = "references/clinical-digests.md";
+  var RULES = { key: "", text: PARTS[CLS], dig: "", loaded: [], skipped: [], dloaded: [] };
+  // Разбивает файл на разделы ## / ###; раздел с тегом ключей подключается только при совпадении с текстом; начало файла до первого раздела — всегда.
+  function selectFile(name, low) {
+    var secs = (PARTS[name] || "").split(/\n(?=#{2,3} )/), out = [], loaded = [], skipped = [];
     secs.forEach(function (sec) {
       var m = sec.match(/^(#{2,3} [^\n]*)\n<!-- ключи: (.+?) -->/);
       if (!m) { out.push(sec); return; }
@@ -217,7 +217,11 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       var title = m[1].replace(/^#+ /, "").replace(/ \(решение врача-эксперта\)$/, "").split(":")[0];
       if (ok) { out.push(sec.replace(/\n<!-- ключи: .+? -->/, "")); loaded.push(title); } else skipped.push(title);
     });
-    return { key: loaded.join("|"), text: out.join("\n"), loaded: loaded, skipped: skipped };
+    return { text: out.join("\n"), loaded: loaded, skipped: skipped };
+  }
+  function selectRules(text) {
+    var low = (text || "").toLowerCase(), c = selectFile(CLS, low), d = selectFile(DIG, low);
+    return { key: c.loaded.join("|") + "#" + d.loaded.join("|"), text: c.text, dig: d.loaded.length ? d.text : "", loaded: c.loaded, skipped: c.skipped, dloaded: d.loaded };
   }
   function prepareRules(text) {
     var r = selectRules(text);
@@ -225,7 +229,11 @@ button.small { padding: 4px 10px; font-size: .82rem; }
   }
   var skillABytesCache = null;
   function skillABytes() { if (skillABytesCache === null) skillABytesCache = bytes(skillText(SET_A)); return skillABytesCache; }
-  function skillText(names) { return names.map(function (n) { return "=== ФАЙЛ НАВЫКА: " + n + " ===\n" + (n === CLS ? RULES.text : PARTS[n]); }).join("\n\n"); }
+  function skillText(names) {
+    return names.filter(function (n) { return n !== DIG || RULES.dig; }).map(function (n) {
+      return "=== ФАЙЛ НАВЫКА: " + n + " ===\n" + (n === CLS ? RULES.text : n === DIG ? RULES.dig : PARTS[n]);
+    }).join("\n\n");
+  }
   var maxBytes = 262144;
   var $ = function (id) { return document.getElementById(id); };
   var els = { drop: $("drop"), file: $("file"), fileStatus: $("fileStatus"), text: $("text"), masked: $("masked"),
@@ -480,7 +488,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       var nParts = Math.ceil(b / Math.max(1, budget * 0.85));
       mode = budget >= b ? " Текст помещается целиком (для этого текста в одном запросе помещается до " + cap.toLocaleString("ru-RU") + " знаков): разбор по полному тексту." : " Текст длиннее лимита одного запроса (для него помещается до " + cap.toLocaleString("ru-RU") + " знаков): страница разрежет его по смысловым границам (разделы, даты дневников) примерно на " + nParts + " частей с перекрытием, разберёт каждую полностью и составит единый свод (запросов: около " + (nParts + 2) + "). Сжатие пересказом — только если частей слишком много. Можно заранее убрать повторы кнопкой «Убрать лишнее».";
     }
-    els.textInfo.textContent = len ? (len.toLocaleString("ru-RU") + " знаков." + (over ? " Слишком длинный текст: оставьте не более " + MAX_CHARS.toLocaleString("ru-RU") + "." : mode) + (len && RULES.loaded.length ? " Загружены правила по нозологиям: " + RULES.loaded.join("; ") + "." : (len ? " Правила по нозологиям не найдены по ключевым словам: действуют общие правила." : ""))) : "";
+    els.textInfo.textContent = len ? (len.toLocaleString("ru-RU") + " знаков." + (over ? " Слишком длинный текст: оставьте не более " + MAX_CHARS.toLocaleString("ru-RU") + "." : mode) + (len && (RULES.loaded.length || RULES.dloaded.length) ? " Загружены правила и материалы по нозологиям: " + RULES.loaded.concat(RULES.dloaded).join("; ") + "." : (len ? " Правила по нозологиям не найдены по ключевым словам: действуют общие правила." : ""))) : "";
     els.run.disabled = !(sample && len > 300 && !over && els.confirm.checked && !ctl);
     renderDocs();
   }
@@ -598,7 +606,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       skillText(names),
       "",
       "=== ОГРАНИЧЕНИЯ СРЕДЫ ===",
-      "- Из classification.md загружены общие правила и блоки по нозологиям: " + (RULES.loaded.length ? RULES.loaded.join("; ") : "нет") + ". Остальные блоки по нозологиям (" + RULES.skipped.length + ") не загружены, так как в тексте нет их ключевых слов; если нужного блока нет, оценивай по общим правилам и помечай «правило для нозологии не загружено, требует сверки».",
+      "- Из classification.md загружены общие правила и блоки по нозологиям: " + (RULES.loaded.length ? RULES.loaded.join("; ") : "нет") + ". " + (RULES.dloaded.length ? "Из clinical-digests.md (выжимки международных обзоров, не норматив РК) загружены: " + RULES.dloaded.join("; ") + ". " : "") + "Остальные блоки по нозологиям (" + RULES.skipped.length + ") не загружены, так как в тексте нет их ключевых слов; если нужного блока нет, оценивай по общим правилам и помечай «правило для нозологии не загружено, требует сверки».",
       "- Интернета и файлов нет. Внешние источники НЕ открывались: все эталоны, дозы, пороги, пункты нормативов помечай «из памяти модели, требует сверки», статус источников «требует сверки». Не выдумывай ссылки, DOI, PMID, пункты приказов.",
       "- Идентификаторы пациента и персонала не включай. Календарные даты в вывод не включай: переводи в Д0 (день поступления), Д+N. Допустимы только номер экспертизы, дата проверки, номер истории болезни.",
       "- Материалы могут быть выдержками: «не найдено ≠ не сделано» (правила в classification.md). Если время события не указано, интервал не считай. Каждый интервал и расчёт пересчитай и пометь «расчёт аудитора, требует проверки врачом».",
