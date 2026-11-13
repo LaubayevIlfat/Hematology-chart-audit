@@ -106,7 +106,7 @@ details summary { cursor: pointer; font-weight: 500; }
 <div class="wrap">
   <header>
     <h1>Аудит истории болезни</h1>
-    <p class="lead">Загрузите историю болезни по гематологии в формате Word (.docx) или PDF. Страница извлечёт текст, закроет типовые идентификаторы и подготовит развёрнутый отчёт и проект заключения по правилам навыка hematology-chart-audit.</p>
+    <p class="lead">Загрузите историю болезни по гематологии в формате Word (.docx) или PDF; можно сразу несколько документов одного пациента. Страница извлечёт текст, закроет типовые идентификаторы и подготовит единый развёрнутый отчёт и проект заключения по правилам навыка hematology-chart-audit.</p>
   </header>
 
   <div class="notice" role="note">
@@ -114,13 +114,13 @@ details summary { cursor: pointer; font-weight: 500; }
   </div>
 
   <section class="card" id="s1">
-    <h2><span class="step">1</span> Файл истории болезни</h2>
-    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Выбрать файл Word или PDF">
-      <b>Перетащите файл Word (.docx) или PDF сюда или нажмите, чтобы выбрать</b>
-      <small>Word (.docx), PDF с текстовым слоем или текстовый файл (.txt, .md). Старый формат .doc сохраните как .docx. Сканы и фото пока не читаются: вставьте текст вручную ниже.</small>
+    <h2><span class="step">1</span> Файлы истории болезни</h2>
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Выбрать файлы Word или PDF">
+      <b>Перетащите файлы Word (.docx) или PDF сюда или нажмите, чтобы выбрать</b>
+      <small>Можно выбрать сразу несколько файлов одного пациента (амбулаторная карта, стационар, выписки, анализы, протоколы) и добавлять ещё: страница объединит их в один текст и подготовит единую экспертизу. Документы разных пациентов не смешивайте. Word (.docx), PDF с текстовым слоем, .txt, .md; старый .doc сохраните как .docx. Сканы и фото пока не читаются: вставьте текст вручную ниже.</small>
     </div>
-    <input id="file" type="file" accept=".docx,.pdf,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,text/plain" hidden>
-    <div class="status" id="fileStatus" aria-live="polite"></div>
+    <input id="file" type="file" multiple accept=".docx,.pdf,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,text/plain" hidden>
+    <div class="status" id="fileStatus" aria-live="polite" style="white-space:pre-line"></div>
   </section>
 
   <section class="card" id="s2">
@@ -129,9 +129,10 @@ details summary { cursor: pointer; font-weight: 500; }
     <div class="chips" id="masked" aria-live="polite"></div>
     <div class="field">
       <label for="text">Текст истории болезни</label>
-      <textarea id="text" spellcheck="false" placeholder="Здесь появится текст из файла. Можно вставить текст сюда вручную."></textarea>
+      <textarea id="text" spellcheck="false" placeholder="Здесь появится текст из файлов (несколько документов подряд, каждый под строкой «=== ДОКУМЕНТ N ==="). Можно вставить текст сюда вручную."></textarea>
     </div>
     <div class="status" id="textInfo"></div>
+    <div class="actions"><button id="clearText" class="ghost" type="button">Очистить текст</button></div>
     <div class="row">
       <div class="field">
         <label for="expNo">Номер экспертизы (необязательно)</label>
@@ -287,60 +288,72 @@ details summary { cursor: pointer; font-weight: 500; }
     return { paras: lines.length, text: text };
   }
 
-  async function handleFile(file) {
-    if (!file) return;
-    els.fileStatus.className = "status";
-    els.fileStatus.textContent = "Читаю файл «" + file.name.replace(/[^\wА-Яа-яЁё .\-]/g, "") + "»…";
-    try {
-      var ext = (file.name.split(".").pop() || "").toLowerCase();
-      if (ext === "doc" || ext === "rtf" || ext === "odt") {
-        els.fileStatus.className = "status err";
-        els.fileStatus.textContent = "Формат ." + ext + " не читается. Сохраните файл в Word как .docx (Файл → Сохранить как) и загрузите снова.";
-        els.confirm.checked = false;
-        refresh();
-        return;
-      }
-      var r;
-      if (ext === "docx" || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-        r = await extractDocx(file);
-        if (r.text.replace(/\s/g, "").length < 200) {
-          els.fileStatus.className = "status err";
-          els.fileStatus.textContent = "В документе Word почти нет текста (возможно, история вставлена картинками). Вставьте текст вручную в поле ниже.";
-        } else {
-          els.fileStatus.textContent = "Готово: " + r.paras.toLocaleString("ru-RU") + " абзацев и строк таблиц, " + r.text.length.toLocaleString("ru-RU") + " знаков. Колонтитулы, сноски и текстовые рамки не читаются.";
-        }
-        els.text.value = r.text;
-      } else if (ext === "txt" || ext === "md" || file.type === "text/plain") {
-        r = { text: await file.text() };
-        els.fileStatus.textContent = "Готово: " + r.text.length.toLocaleString("ru-RU") + " знаков.";
-        els.text.value = r.text;
-      } else {
-        r = await extractPdf(file);
-        var perPage = r.text.length / Math.max(1, r.pages.length);
-        if (r.text.replace(/\s/g, "").length < 200 || perPage < 150) {
-          els.fileStatus.className = "status err";
-          els.fileStatus.textContent = "В файле почти нет текстового слоя (вероятно, скан). Вставьте текст вручную в поле ниже или распознайте файл заранее.";
-          els.text.value = r.text;
-        } else {
-          els.fileStatus.textContent = "Готово: " + r.pages.length + " стр., " + r.text.length.toLocaleString("ru-RU") + " знаков.";
-          els.text.value = r.text;
-        }
-      }
-      applyMask();
-    } catch (e) {
-      els.fileStatus.className = "status err";
-      els.fileStatus.textContent = "Не удалось прочитать файл. Проверьте, что это .docx или PDF с текстовым слоем, или вставьте текст вручную.";
+  function cleanName(n) { return n.replace(/[^\wА-Яа-яЁё .\-]/g, ""); }
+
+  // Читает один файл: { text, note, err }. Имя файла в отправляемый текст не попадает.
+  async function readOne(file) {
+    var ext = (file.name.split(".").pop() || "").toLowerCase(), r;
+    if (ext === "doc" || ext === "rtf" || ext === "odt") {
+      return { text: "", err: true, note: "формат ." + ext + " не читается: сохраните файл в Word как .docx (Файл → Сохранить как) и загрузите снова." };
     }
+    if (ext === "docx" || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+      r = await extractDocx(file);
+      if (r.text.replace(/\s/g, "").length < 200) return { text: r.text, err: true, note: "почти нет текста (возможно, документ вставлен картинками); проверьте и при необходимости вставьте текст вручную." };
+      return { text: r.text, note: r.paras.toLocaleString("ru-RU") + " абзацев и строк таблиц, " + r.text.length.toLocaleString("ru-RU") + " знаков (колонтитулы, сноски и текстовые рамки не читаются)." };
+    }
+    if (ext === "txt" || ext === "md" || file.type === "text/plain") {
+      r = { text: await file.text() };
+      return { text: r.text, note: r.text.length.toLocaleString("ru-RU") + " знаков." };
+    }
+    r = await extractPdf(file);
+    var perPage = r.text.length / Math.max(1, r.pages.length);
+    if (r.text.replace(/\s/g, "").length < 200 || perPage < 150) return { text: r.text, err: true, note: "почти нет текстового слоя (вероятно, скан); вставьте текст вручную или распознайте файл заранее." };
+    return { text: r.text, note: r.pages.length + " стр., " + r.text.length.toLocaleString("ru-RU") + " знаков." };
+  }
+
+  var DOC_HEAD = /^=== ДОКУМЕНТ (\d+) ===$/gm;
+  function countDocs(t) { return (t.match(DOC_HEAD) || []).length; }
+
+  async function handleFiles(list) {
+    var files = Array.prototype.slice.call(list || []);
+    if (!files.length) return;
+    els.fileStatus.className = "status";
+    var notes = [], blocks = [], anyErr = false;
+    for (var k = 0; k < files.length; k++) {
+      var f = files[k], label = "«" + cleanName(f.name) + "»";
+      els.fileStatus.textContent = "Читаю файл " + (k + 1) + " из " + files.length + ": " + label + "…";
+      try {
+        var r = await readOne(f);
+        if (r.text.trim()) blocks.push(r.text.trim());
+        if (r.err) anyErr = true;
+        notes.push(label + ": " + r.note);
+      } catch (e) {
+        anyErr = true;
+        notes.push(label + ": не удалось прочитать. Проверьте, что это .docx или PDF с текстовым слоем, или вставьте текст вручную.");
+      }
+    }
+    if (blocks.length) {
+      var existing = els.text.value.trim(), n = countDocs(existing);
+      if (existing && n === 0) { existing = "=== ДОКУМЕНТ 1 ===\n" + existing; n = 1; }
+      var total = n + blocks.length, parts = existing ? [existing] : [];
+      blocks.forEach(function (b, idx) { parts.push(total === 1 ? b : "=== ДОКУМЕНТ " + (n + idx + 1) + " ===\n" + b); });
+      els.text.value = parts.join("\n\n");
+      applyMask();
+      var nd = countDocs(els.text.value); notes.push(nd ? "Документов в тексте: " + nd + ". Все они будут разобраны как один случай." : "В тексте один документ.");
+    }
+    els.fileStatus.className = "status" + (anyErr ? " err" : "");
+    els.fileStatus.textContent = notes.join("\n");
     els.confirm.checked = false;
     refresh();
   }
 
   els.drop.addEventListener("click", function () { els.file.click(); });
   els.drop.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); els.file.click(); } });
-  els.file.addEventListener("change", function () { handleFile(els.file.files[0]); });
+  els.file.addEventListener("change", function () { var fl = els.file.files; handleFiles(fl).then(function () { try { els.file.value = ""; } catch (e) {} }); });
   ["dragenter", "dragover"].forEach(function (n) { els.drop.addEventListener(n, function (e) { e.preventDefault(); els.drop.classList.add("over"); }); });
   ["dragleave", "drop"].forEach(function (n) { els.drop.addEventListener(n, function (e) { e.preventDefault(); els.drop.classList.remove("over"); }); });
-  els.drop.addEventListener("drop", function (e) { var f = e.dataTransfer && e.dataTransfer.files[0]; handleFile(f); });
+  els.drop.addEventListener("drop", function (e) { handleFiles(e.dataTransfer && e.dataTransfer.files); });
+  $("clearText").addEventListener("click", function () { els.text.value = ""; els.masked.innerHTML = ""; els.fileStatus.textContent = ""; els.fileStatus.className = "status"; els.confirm.checked = false; refresh(); });
 
   // ---------- Masking of typical identifiers ----------
   function applyMask() {
@@ -390,7 +403,7 @@ details summary { cursor: pointer; font-weight: 500; }
 
   function digestPrompt(chunk, i, n) {
     return "Ты готовишь рабочую выжимку части " + i + " из " + n + " истории болезни по гематологии для последующего аудита. Сократи текст, ничего не оценивая и не интерпретируя.\n" +
-      "Сохраняй ДОСЛОВНО и ПОЛНОСТЬЮ: даты и время событий, дни, названия препаратов, дозы, пути и режимы введения, единицы, лабораторные и инструментальные значения (в таблицах сохраняй строки и столбцы), диагнозы и формулировки диагноза, назначения и отмены, трансфузии (компонент, группа, дозы), явные записи об отсутствии или невыполнении («не выполнялось», «не значится», «не проводилось», «не представлено»), расхождения между разделами, записи об осложнениях, осмотрах, консультациях, согласиях, исходе. Сохраняй заголовки разделов и порядок записей.\n" +
+      "Сохраняй ДОСЛОВНО и ПОЛНОСТЬЮ: даты и время событий, дни, названия препаратов, дозы, пути и режимы введения, единицы, лабораторные и инструментальные значения (в таблицах сохраняй строки и столбцы), диагнозы и формулировки диагноза, назначения и отмены, трансфузии (компонент, группа, дозы), явные записи об отсутствии или невыполнении («не выполнялось», «не значится», «не проводилось», «не представлено»), расхождения между разделами, записи об осложнениях, осмотрах, консультациях, согласиях, исходе. Сохраняй заголовки разделов и порядок записей. Строки-разделители «=== ДОКУМЕНТ N ===» сохраняй дословно на своих местах, документы не объединяй и не переставляй.\n" +
       "Удаляй: повторяющиеся шаблонные фразы, колонтитулы, номера страниц, пустые поля, дубли одинаковых записей (но если два дневника в разные дни дословно совпадают, пометь это словами «[текст дословно совпадает с записью от <дата>]»).\n" +
       "Если какой-то фрагмент неразборчив, пометь [нечитаемо]. Не добавляй свои выводы. Ответ: только выжимка, не более 18 000 знаков, по-русски.\n\n=== ЧАСТЬ " + i + " ИЗ " + n + " ===\n" + chunk + "\n=== КОНЕЦ ЧАСТИ ===";
   }
@@ -425,6 +438,7 @@ details summary { cursor: pointer; font-weight: 500; }
       "- Идентификаторы пациента и персонала не включай. Календарные даты в вывод не включай: переводи в Д0 (день поступления), Д+N. Допустимы только номер экспертизы, дата проверки, номер истории болезни.",
       "- Материалы могут быть выдержками: «не найдено ≠ не сделано» (правила в classification.md). Если время события не указано, интервал не считай. Каждый интервал и расчёт пересчитай и пометь «расчёт аудитора, требует проверки врачом».",
       "- Отвечай по-русски, оформляй markdown: заголовки #, таблицы, списки. Пиши все коды находок в виде З1-01, З2-01, Н-01.",
+      (chart !== null && /^=== ДОКУМЕНТ \d+ ===$/m.test(chart.text)) ? "- Текст состоит из нескольких документов ОДНОГО пациента (например, амбулаторная карта, стационар, выписки, лабораторные и инструментальные протоколы), разделённых строками «=== ДОКУМЕНТ N ===». Это один случай и одна экспертиза: собери единую хронологию по всем документам, сопоставь данные между ними, расхождения между документами (даты, дозы, диагнозы, коды, масса) оформляй как находки по общим правилам, находки не группируй по документам и не дублируй одну и ту же ошибку из разных документов. В шапке перечисли состав материалов (какие документы представлены, каких не хватает); в находках ссылайся на документ как «док. N» и день Д…, N — только номер из разделителя." : "",
       "- Реквизиты: номер экспертизы: " + (els.expNo.value.trim() || "не присвоен (вносит человек)") + "; дата проверки: " + today() + "; № истории болезни: " + (els.histNo.value.trim() || "не указан") + ".",
       "",
       chart === null ? "" : ("=== ТЕКСТ ИСТОРИИ БОЛЕЗНИ" + (chart.digest ? " (СЖАТАЯ ВЫЖИМКА: исходный текст сокращён по частям; дозы, время и значения сохранены дословно, но отдельные детали могли быть опущены; не делай выводов об отсутствии записи по выжимке, помечай такие случаи «требует уточнения»)" : "") + " ===\n" + chart.text + "\n=== КОНЕЦ ТЕКСТА ИСТОРИИ БОЛЕЗНИ ===")
