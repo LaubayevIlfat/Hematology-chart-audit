@@ -100,6 +100,9 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .counter.z2 { background: var(--z2-soft); color: var(--z2); }
 .counter.n { background: var(--n-soft); color: var(--n); }
 details summary { cursor: pointer; font-weight: 500; }
+.docs { display: flex; flex-direction: column; gap: 6px; }
+.docrow { display: flex; gap: 10px; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: .88rem; }
+button.small { padding: 4px 10px; font-size: .82rem; }
 .foot { font-size: .8rem; color: var(--muted); max-width: 70ch; }
 </style>
 
@@ -132,7 +135,8 @@ details summary { cursor: pointer; font-weight: 500; }
       <textarea id="text" spellcheck="false" placeholder="Здесь появится текст из файлов (несколько документов подряд, каждый под строкой «=== ДОКУМЕНТ N ==="). Можно вставить текст сюда вручную."></textarea>
     </div>
     <div class="status" id="textInfo"></div>
-    <div class="actions"><button id="clearText" class="ghost" type="button">Очистить текст</button></div>
+    <div id="docs" class="docs" hidden></div>
+    <div class="actions"><button id="cleanBtn" class="ghost" type="button">Убрать лишнее</button><button id="clearText" class="ghost" type="button">Очистить текст</button></div>
     <div class="row">
       <div class="field">
         <label for="expNo">Номер экспертизы (необязательно)</label>
@@ -185,7 +189,29 @@ details summary { cursor: pointer; font-weight: 500; }
   var SET_B = ["SKILL.md", "references/classification.md", "references/systemic-analysis.md", "references/report-structure.md", "references/self-check.md", "references/normative-rk.md", "references/sources.md", "template"];
   var enc = new TextEncoder();
   function bytes(t) { return enc.encode(t).length; }
-  function skillText(names) { return names.map(function (n) { return "=== ФАЙЛ НАВЫКА: " + n + " ===\n" + PARTS[n]; }).join("\n\n"); }
+  // Отбор правил classification.md: общие разделы всегда, блоки по нозологиям (с тегом «<!-- ключи: ... -->») только при совпадении с текстом истории.
+  var CLS = "references/classification.md";
+  var RULES = { key: "", text: PARTS[CLS], loaded: [], skipped: [] };
+  function selectRules(text) {
+    var low = (text || "").toLowerCase();
+    var secs = PARTS[CLS].split(/\n(?=#{2,3} )/), out = [], loaded = [], skipped = [];
+    secs.forEach(function (sec) {
+      var m = sec.match(/^(#{2,3} [^\n]*)\n<!-- ключи: (.+?) -->/);
+      if (!m) { out.push(sec); return; }
+      var ok = false;
+      try { ok = new RegExp(m[2], "i").test(low); } catch (e) { ok = true; }
+      var title = m[1].replace(/^#+ /, "").replace(/ \(решение врача-эксперта\)$/, "").split(":")[0];
+      if (ok) { out.push(sec.replace(/\n<!-- ключи: .+? -->/, "")); loaded.push(title); } else skipped.push(title);
+    });
+    return { key: loaded.join("|"), text: out.join("\n"), loaded: loaded, skipped: skipped };
+  }
+  function prepareRules(text) {
+    var r = selectRules(text);
+    if (r.key !== RULES.key || RULES.skipped.length !== r.skipped.length) { RULES = r; skillABytesCache = null; }
+  }
+  var skillABytesCache = null;
+  function skillABytes() { if (skillABytesCache === null) skillABytesCache = bytes(skillText(SET_A)); return skillABytesCache; }
+  function skillText(names) { return names.map(function (n) { return "=== ФАЙЛ НАВЫКА: " + n + " ===\n" + (n === CLS ? RULES.text : PARTS[n]); }).join("\n\n"); }
   var maxBytes = 262144;
   var $ = function (id) { return document.getElementById(id); };
   var els = { drop: $("drop"), file: $("file"), fileStatus: $("fileStatus"), text: $("text"), masked: $("masked"),
@@ -374,21 +400,80 @@ details summary { cursor: pointer; font-weight: 500; }
   }
 
   function refresh() {
-    var len = els.text.value.trim().length;
+    var raw = els.text.value, len = raw.trim().length;
     var over = len > MAX_CHARS;
+    prepareRules(raw);
     els.textInfo.className = "status" + (over ? " err" : "");
     var mode = "";
-    if (len && !over) { mode = auditBudget() >= bytes(els.text.value.trim()) ? " Текст помещается целиком: разбор по полному тексту." : " Текст длиннее лимита одного запроса: страница сначала сожмёт его по частям, сохраняя дозы, время и лабораторные значения. Детали могут потеряться, проверяйте результат."; }
-    els.textInfo.textContent = len ? (len.toLocaleString("ru-RU") + " знаков." + (over ? " Слишком длинный текст: оставьте не более " + MAX_CHARS.toLocaleString("ru-RU") + "." : mode)) : "";
+    if (len && !over) {
+      var b = bytes(raw.trim()), budget = auditBudget();
+      var cap = Math.max(0, Math.floor(budget * (len / Math.max(1, b))));
+      mode = budget >= b ? " Текст помещается целиком (для этого текста в одном запросе помещается до " + cap.toLocaleString("ru-RU") + " знаков): разбор по полному тексту." : " Текст длиннее лимита одного запроса (для него помещается до " + cap.toLocaleString("ru-RU") + " знаков). Уберите повторы кнопкой «Убрать лишнее» или исключите ненужные документы; иначе страница сначала сожмёт текст по частям, сохраняя дозы, время и лабораторные значения, но детали могут потеряться.";
+    }
+    els.textInfo.textContent = len ? (len.toLocaleString("ru-RU") + " знаков." + (over ? " Слишком длинный текст: оставьте не более " + MAX_CHARS.toLocaleString("ru-RU") + "." : mode) + (len && RULES.loaded.length ? " Загружены правила по нозологиям: " + RULES.loaded.join("; ") + "." : (len ? " Правила по нозологиям не найдены по ключевым словам: действуют общие правила." : ""))) : "";
     els.run.disabled = !(sample && len > 300 && !over && els.confirm.checked && !ctl);
+    renderDocs();
   }
+
+  // ---------- Documents panel and cleanup ----------
+  var DOC_SPLIT = /^=== ДОКУМЕНТ (\d+) ===$/m;
+  function splitDocs(t) {
+    var re = /^=== ДОКУМЕНТ (\d+) ===$/gm, idx = [], m;
+    while ((m = re.exec(t)) !== null) idx.push({ n: m[1], start: m.index, bodyStart: m.index + m[0].length });
+    return idx.map(function (d, k) { var end = k + 1 < idx.length ? idx[k + 1].start : t.length; return { n: d.n, start: d.start, end: end, text: t.slice(d.bodyStart, end).trim() }; });
+  }
+  function renderDocs() {
+    var box = $("docs"), t = els.text.value, docs = splitDocs(t);
+    box.innerHTML = "";
+    if (docs.length < 2) { box.hidden = true; return; }
+    box.hidden = false;
+    var total = docs.reduce(function (a, d) { return a + d.text.length; }, 0) || 1;
+    docs.forEach(function (d) {
+      var row = document.createElement("div"); row.className = "docrow";
+      var lab = document.createElement("span"); lab.textContent = "Документ " + d.n + ": " + d.text.length.toLocaleString("ru-RU") + " знаков (" + Math.round(d.text.length * 100 / total) + "%)";
+      var btn = document.createElement("button"); btn.className = "ghost small"; btn.type = "button"; btn.textContent = "Исключить";
+      btn.addEventListener("click", function () {
+        var cur = els.text.value, ds = splitDocs(cur).filter(function (x) { return x.n === d.n; })[0];
+        if (!ds) return;
+        els.text.value = (cur.slice(0, ds.start) + cur.slice(ds.end)).replace(/\n{3,}/g, "\n\n").trim();
+        var left = splitDocs(els.text.value);
+        if (left.length === 1) els.text.value = left[0].text;
+        els.fileStatus.className = "status"; els.fileStatus.textContent = "Документ " + d.n + " исключён из текста.";
+        els.confirm.checked = false; refresh();
+      });
+      row.appendChild(lab); row.appendChild(btn); box.appendChild(row);
+    });
+  }
+  // Убирает номера страниц, декоративные линии и повторные абзацы; длинный дословный повтор заменяется пометкой, чтобы совпадение дневников оставалось видно.
+  function cleanText(t) {
+    var seen = {}, st = { pages: 0, deco: 0, dups: 0 }, out = [];
+    t.replace(/\r\n?/g, "\n").replace(/\u00a0/g, " ").split("\n").forEach(function (line) {
+      var l = line.replace(/[ \t]+$/g, "");
+      var core = l.trim();
+      if (/^(стр(аница|\.)?\s*)\d+(\s*(из|\/)\s*\d+)?$/i.test(core) || /^\d+\s*(из|\/)\s*\d+$/.test(core)) { st.pages++; return; }
+      if (/^[-–—_.=*~ ]{4,}$/.test(core)) { st.deco++; return; }
+      if (core.length >= 140) {
+        var key = core.replace(/\s+/g, " ").toLowerCase();
+        if (seen[key]) { st.dups++; out.push("[дословный повтор записи выше: «" + core.slice(0, 50) + "…»]"); return; }
+        seen[key] = 1;
+      }
+      out.push(l);
+    });
+    return { text: out.join("\n").replace(/\n{3,}/g, "\n\n").trim(), st: st };
+  }
+  $("cleanBtn").addEventListener("click", function () {
+    var before = els.text.value.length, r = cleanText(els.text.value);
+    els.text.value = r.text;
+    els.fileStatus.className = "status";
+    els.fileStatus.textContent = "Убрано лишнее: было " + before.toLocaleString("ru-RU") + " знаков, стало " + r.text.length.toLocaleString("ru-RU") + ". Номера страниц: " + r.st.pages + ", декоративные линии: " + r.st.deco + ", длинные повторы абзацев заменены пометкой: " + r.st.dups + ". Короткие повторяющиеся записи не трогались.";
+    els.confirm.checked = false; refresh();
+  });
   els.text.addEventListener("input", function () { els.confirm.checked = false; refresh(); });
   els.confirm.addEventListener("change", refresh);
   els.text.addEventListener("change", function () { applyMask(); refresh(); });
 
   // ---------- Size budget and digest ----------
-  var SKILL_A_BYTES = bytes(skillText(SET_A));
-  function auditBudget() { return Math.floor(maxBytes * 0.97) - SKILL_A_BYTES - 6000; }
+  function auditBudget() { return Math.floor(maxBytes * 0.97) - skillABytes() - 6500; }
 
   function chunkText(t, maxChars) {
     var paras = t.split(/\n/), chunks = [], cur = "";
@@ -434,6 +519,7 @@ details summary { cursor: pointer; font-weight: 500; }
       skillText(names),
       "",
       "=== ОГРАНИЧЕНИЯ СРЕДЫ ===",
+      "- Из classification.md загружены общие правила и блоки по нозологиям: " + (RULES.loaded.length ? RULES.loaded.join("; ") : "нет") + ". Остальные блоки по нозологиям (" + RULES.skipped.length + ") не загружены, так как в тексте нет их ключевых слов; если нужного блока нет, оценивай по общим правилам и помечай «правило для нозологии не загружено, требует сверки».",
       "- Интернета и файлов нет. Внешние источники НЕ открывались: все эталоны, дозы, пороги, пункты нормативов помечай «из памяти модели, требует сверки», статус источников «требует сверки». Не выдумывай ссылки, DOI, PMID, пункты приказов.",
       "- Идентификаторы пациента и персонала не включай. Календарные даты в вывод не включай: переводи в Д0 (день поступления), Д+N. Допустимы только номер экспертизы, дата проверки, номер истории болезни.",
       "- Материалы могут быть выдержками: «не найдено ≠ не сделано» (правила в classification.md). Если время события не указано, интервал не считай. Каждый интервал и расчёт пересчитай и пометь «расчёт аудитора, требует проверки врачом».",
@@ -549,6 +635,7 @@ details summary { cursor: pointer; font-weight: 500; }
     var partA = "", partB = "", note = "";
     try {
       var chartObj = { text: chart, digest: false };
+      prepareRules(chart);
       if (bytes(chart) > auditBudget()) {
         chartObj = await digestAll(chart, ctl.signal, function (t) { els.phase.textContent = t; }, function (v) { els.bar.style.width = v + "%"; });
         if (!chartObj.fits) { throw { code: "too_big", message: "текст не удалось сжать до лимита, разделите историю на части" }; }
