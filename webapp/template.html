@@ -100,6 +100,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .counter.z2 { background: var(--z2-soft); color: var(--z2); }
 .counter.n { background: var(--n-soft); color: var(--n); }
 details summary { cursor: pointer; font-weight: 500; }
+fieldset.mode { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; margin: 0; }
 .docs { display: flex; flex-direction: column; gap: 6px; }
 .docrow { display: flex; gap: 10px; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: .88rem; }
 button.small { padding: 4px 10px; font-size: .82rem; }
@@ -147,6 +148,11 @@ button.small { padding: 4px 10px; font-size: .82rem; }
         <input id="histNo" type="text" autocomplete="off">
       </div>
     </div>
+    <fieldset class="mode" id="modeBox" hidden>
+      <legend class="label">Порядок экспертизы для нескольких документов</legend>
+      <label class="check"><input type="radio" name="mode" value="joint" checked> <span>Единым текстом (все документы в одном запросе; если не помещается, текст сжимается)</span></label>
+      <label class="check"><input type="radio" name="mode" value="perdoc"> <span>Сначала каждый документ отдельно, затем единое заключение по всем документам (больше запросов, без сжатия общего текста)</span></label>
+    </fieldset>
     <label class="check" for="confirm">
       <input id="confirm" type="checkbox">
       <span>Я проверил текст: прямых идентификаторов пациента и персонала в нём нет, отправка в Claude разрешена правилами моей организации.</span>
@@ -179,11 +185,18 @@ button.small { padding: 4px 10px; font-size: .82rem; }
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="application/json" id="skill-data">__SKILL_JSON__</script>
+<script type="application/octet-stream" id="skill-data">__SKILL_JSON__</script>
 <script>
-(function () {
+(async function () {
   "use strict";
-  var PARTS = JSON.parse(document.getElementById("skill-data").textContent).parts;
+  // Текст навыка вшит сжатым (gzip + base64), чтобы страница укладывалась в лимит размера.
+  async function loadParts() {
+    var b64 = document.getElementById("skill-data").textContent.trim();
+    var bin = Uint8Array.from(atob(b64), function (c) { return c.charCodeAt(0); });
+    var txt = await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    return JSON.parse(txt).parts;
+  }
+  var PARTS = await loadParts();
   var MAX_CHARS = 800000;
   var SET_A = ["SKILL.md", "references/sections.md", "references/classification.md", "references/deidentification.md", "references/self-check.md", "references/normative-rk.md", "references/sources.md"];
   var SET_B = ["SKILL.md", "references/classification.md", "references/systemic-analysis.md", "references/report-structure.md", "references/self-check.md", "references/normative-rk.md", "references/sources.md", "template"];
@@ -338,6 +351,31 @@ button.small { padding: 4px 10px; font-size: .82rem; }
   }
 
   var DOC_HEAD = /^=== ДОКУМЕНТ (\d+) ===$/gm;
+  // Признаки пациента по исходному тексту до закрытия идентификаторов. Хранятся только в памяти страницы и в запрос не уходят.
+  var META = {};
+  function sigOf(raw) {
+    var s = { iin: {}, hist: {}, fio: {}, dob: {} }, m, re;
+    re = /(?<!\d)\d{12}(?!\d)/g; while ((m = re.exec(raw)) !== null) s.iin[m[0]] = 1;
+    re = /(?:истори\S*\s+болезни|медицинск\S*\s+карт\S*|карт\S*\s+стационарного\s+больного)\s*№\s*([0-9][0-9\/\-]*)/gi; while ((m = re.exec(raw)) !== null) s.hist[m[1]] = 1;
+    re = /ФИО[^\n:|]{0,40}[:|]\s*([А-ЯЁ][а-яё\-]+\s+[А-ЯЁ][а-яё\-]+(?:\s+[А-ЯЁ][а-яё\-]+)?)/g; while ((m = re.exec(raw)) !== null) s.fio[m[1].toLowerCase()] = 1;
+    re = /дата\s+рожд\S*[^\n\d]{0,12}(\d{2}\.\d{2}\.\d{4})/gi; while ((m = re.exec(raw)) !== null) s.dob[m[1]] = 1;
+    return s;
+  }
+  function overlap(a, b) { var ka = Object.keys(a), kb = Object.keys(b); if (!ka.length || !kb.length) return 0; return ka.some(function (k) { return b[k]; }) ? 1 : -1; }
+  // Сравнение документа с остальными загруженными: «same», «conflict» или «unknown» и пояснение.
+  function sameCheck(n, present) {
+    var me = META[n]; if (!me) return { st: "unknown", txt: "признаки пациента не проверялись (текст вставлен вручную)" };
+    var others = present.filter(function (x) { return x !== n && META[x]; });
+    if (!others.length) return { st: "unknown", txt: "" };
+    var keys = [["iin", "ИИН"], ["hist", "№ истории болезни"], ["dob", "дата рождения"], ["fio", "ФИО"]], ok = [], bad = [];
+    others.forEach(function (o) { keys.forEach(function (k) { var r = overlap(me[k[0]], META[o][k[0]]); if (r === 1) ok.push(k[1] + " с док. " + o); if (r === -1) bad.push(k[1] + " с док. " + o); }); });
+    var uniq = function (a) { return a.filter(function (x, i) { return a.indexOf(x) === i; }); };
+    var strongBad = bad.filter(function (x) { return /^ИИН|^дата/.test(x); });
+    if (strongBad.length) return { st: "conflict", txt: "⚠ не совпадает: " + uniq(strongBad).join(", ") + ". Возможно, другой пациент" };
+    if (ok.length) return { st: "same", txt: "✓ совпадает: " + uniq(ok).slice(0, 3).join(", ") + (bad.length ? "; не совпадает: " + uniq(bad).join(", ") : "") };
+    if (bad.length) return { st: "conflict", txt: "⚠ не совпадает: " + uniq(bad).join(", ") };
+    return { st: "unknown", txt: "идентификаторы для сравнения не найдены: проверьте вручную" };
+  }
   function countDocs(t) { return (t.match(DOC_HEAD) || []).length; }
 
   async function handleFiles(list) {
@@ -350,7 +388,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       els.fileStatus.textContent = "Читаю файл " + (k + 1) + " из " + files.length + ": " + label + "…";
       try {
         var r = await readOne(f);
-        if (r.text.trim()) blocks.push(r.text.trim());
+        if (r.text.trim()) blocks.push({ text: r.text.trim(), sig: sigOf(r.text) });
         if (r.err) anyErr = true;
         notes.push(label + ": " + r.note);
       } catch (e) {
@@ -362,7 +400,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       var existing = els.text.value.trim(), n = countDocs(existing);
       if (existing && n === 0) { existing = "=== ДОКУМЕНТ 1 ===\n" + existing; n = 1; }
       var total = n + blocks.length, parts = existing ? [existing] : [];
-      blocks.forEach(function (b, idx) { parts.push(total === 1 ? b : "=== ДОКУМЕНТ " + (n + idx + 1) + " ===\n" + b); });
+      blocks.forEach(function (b, idx) { META[n + idx + 1] = b.sig; parts.push(total === 1 ? b.text : "=== ДОКУМЕНТ " + (n + idx + 1) + " ===\n" + b.text); });
       els.text.value = parts.join("\n\n");
       applyMask();
       var nd = countDocs(els.text.value); notes.push(nd ? "Документов в тексте: " + nd + ". Все они будут разобраны как один случай." : "В тексте один документ.");
@@ -379,7 +417,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
   ["dragenter", "dragover"].forEach(function (n) { els.drop.addEventListener(n, function (e) { e.preventDefault(); els.drop.classList.add("over"); }); });
   ["dragleave", "drop"].forEach(function (n) { els.drop.addEventListener(n, function (e) { e.preventDefault(); els.drop.classList.remove("over"); }); });
   els.drop.addEventListener("drop", function (e) { handleFiles(e.dataTransfer && e.dataTransfer.files); });
-  $("clearText").addEventListener("click", function () { els.text.value = ""; els.masked.innerHTML = ""; els.fileStatus.textContent = ""; els.fileStatus.className = "status"; els.confirm.checked = false; refresh(); });
+  $("clearText").addEventListener("click", function () { META = {}; els.text.value = ""; els.masked.innerHTML = ""; els.fileStatus.textContent = ""; els.fileStatus.className = "status"; els.confirm.checked = false; refresh(); });
 
   // ---------- Masking of typical identifiers ----------
   function applyMask() {
@@ -388,12 +426,25 @@ button.small { padding: 4px 10px; font-size: .82rem; }
     t = t.replace(/(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/g, function () { counts.phone++; return "[телефон закрыт]"; });
     t = t.replace(/[\w.+\-]+@[\w\-]+\.[\w.\-]+/g, function () { counts.mail++; return "[почта закрыта]"; });
     t = t.replace(/(Удостоверение личности|Паспорт)[^\n]{0,40}\d{6,}/gi, function (m, a) { counts.doc++; return a + " [номер закрыт]"; });
+    var fios = {}, dobs = {};
+    Object.keys(META).forEach(function (k) { Object.keys(META[k].fio || {}).forEach(function (f) { fios[f] = 1; }); Object.keys(META[k].dob || {}).forEach(function (d) { dobs[d] = 1; }); });
+    counts.fio = 0; counts.dob = 0;
+    var esc = function (x) { return x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); };
+    Object.keys(fios).forEach(function (f) {
+      var full = new RegExp("(?<![А-Яа-яЁё])" + esc(f).replace(/\s+/g, "\\s+") + "(?![А-Яа-яЁё])", "gi");
+      t = t.replace(full, function () { counts.fio++; return "[ФИО закрыто]"; });
+      var sur = f.split(/\s+/)[0];
+      if (sur.length >= 4) t = t.replace(new RegExp("(?<![А-Яа-яЁё])" + esc(sur) + "(?![А-Яа-яЁё])", "gi"), function () { counts.fio++; return "[ФИО закрыто]"; });
+    });
+    Object.keys(dobs).forEach(function (d) { t = t.replace(new RegExp(esc(d), "g"), function () { counts.dob++; return "[дата рождения закрыта]"; }); });
     els.text.value = t;
     var chips = [];
     if (counts.iin) chips.push("ИИН: " + counts.iin);
     if (counts.phone) chips.push("телефоны: " + counts.phone);
     if (counts.mail) chips.push("почта: " + counts.mail);
     if (counts.doc) chips.push("документы: " + counts.doc);
+    if (counts.fio) chips.push("ФИО (по полю «ФИО»): " + counts.fio);
+    if (counts.dob) chips.push("дата рождения: " + counts.dob);
     els.masked.innerHTML = "";
     if (chips.length) { var s = document.createElement("span"); s.className = "status"; s.textContent = "Закрыто автоматически:"; els.masked.appendChild(s); }
     chips.forEach(function (c) { var s = document.createElement("span"); s.className = "chip"; s.textContent = c; els.masked.appendChild(s); });
@@ -425,12 +476,16 @@ button.small { padding: 4px 10px; font-size: .82rem; }
   function renderDocs() {
     var box = $("docs"), t = els.text.value, docs = splitDocs(t);
     box.innerHTML = "";
+    $("modeBox").hidden = docs.length < 2;
     if (docs.length < 2) { box.hidden = true; return; }
     box.hidden = false;
     var total = docs.reduce(function (a, d) { return a + d.text.length; }, 0) || 1;
+    var present = docs.map(function (d) { return +d.n; }), conflicts = 0;
     docs.forEach(function (d) {
       var row = document.createElement("div"); row.className = "docrow";
-      var lab = document.createElement("span"); lab.textContent = "Документ " + d.n + ": " + d.text.length.toLocaleString("ru-RU") + " знаков (" + Math.round(d.text.length * 100 / total) + "%)";
+      var sc = sameCheck(+d.n, present); if (sc.st === "conflict") conflicts++;
+      var lab = document.createElement("span"); lab.textContent = "Документ " + d.n + ": " + d.text.length.toLocaleString("ru-RU") + " знаков (" + Math.round(d.text.length * 100 / total) + "%)" + (sc.txt ? ". " + sc.txt : "");
+      if (sc.st === "conflict") lab.className = "status err";
       var btn = document.createElement("button"); btn.className = "ghost small"; btn.type = "button"; btn.textContent = "Исключить";
       btn.addEventListener("click", function () {
         var cur = els.text.value, ds = splitDocs(cur).filter(function (x) { return x.n === d.n; })[0];
@@ -443,6 +498,9 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       });
       row.appendChild(lab); row.appendChild(btn); box.appendChild(row);
     });
+    var note = document.createElement("div"); note.className = "status" + (conflicts ? " err" : "");
+    note.textContent = conflicts ? "Похоже, загружены документы разных пациентов. Исключите лишние: экспертиза проводится по одной истории болезни." : "Совпадение пациента проверено по ИИН, № истории болезни, дате рождения и ФИО в исходных файлах (до закрытия). Эти данные в запрос не уходят.";
+    box.appendChild(note);
   }
   // Убирает номера страниц, декоративные линии и повторные абзацы; длинный дословный повтор заменяется пометкой, чтобы совпадение дневников оставалось видно.
   function cleanText(t) {
@@ -545,6 +603,27 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       "В самом конце выведи строку «РЕЕСТР НАХОДОК» и список «код — класс — раздел — код ЕК ФСМС (ориентир) — суть в 5–8 словах». Не пиши частей 6 и далее: они будут в следующем запросе. Перед выдачей выполни самопроверку из self-check.md (арифметика, единицы, согласованность, обезличивание).";
   }
 
+  function promptStage(docText, k, n) {
+    return common({ text: docText.text, digest: docText.digest }, SET_A) + "\n\n=== ЗАДАНИЕ: ЭТАП " + k + " ИЗ " + n + " (ОДИН ДОКУМЕНТ) ===\n" +
+      "Это документ " + k + " из " + n + " одной истории болезни (документы одного пациента разбираются по очереди, затем сводятся в единое заключение отдельным запросом). Разбери только этот документ по правилам навыка. Не делай выводов об отсутствии того, что может находиться в других документах; выводы, для которых нужны другие документы (связь назначения с осложнением, исход, выписка), вынеси в вопросы к своду.\n" +
+      "Структура ответа (кратко, не более 10 000 знаков):\n# ДОКУМЕНТ " + k + ": отчёт этапа\n" +
+      "1. Что за документ и период (Д0 — поступление, если он указан; иначе первая дата документа).\n" +
+      "2. Хронология этапа (таблица, ссылки «док. " + k + ", Д…»).\n" +
+      "3. Таблица фактов: диагнозы и коды, препараты с дозой, путём, днями и временем, масса и рост, ключевые лабораторные значения по дням, согласия, явные записи об отсутствии — с короткими дословными цитатами.\n" +
+      "4. Находки, видимые в этом документе: код (Э" + k + "-1, Э" + k + "-2…), класс З1/З2/Н, код ЕК ФСМС (ориентир), цитата и «док. " + k + "», эталон, влияние, уверенность.\n" +
+      "5. Вопросы к своду (что проверить в других документах).";
+  }
+
+  function promptMerge(stages, n) {
+    return common(null, SET_A) + "\n\n=== ОТЧЁТЫ ПО ДОКУМЕНТАМ (исходные тексты здесь не приводятся; цитаты бери из отчётов) ===\n" + stages.join("\n\n") + "\n=== КОНЕЦ ОТЧЁТОВ ===\n\n" +
+      "=== ЗАДАНИЕ (ЧАСТЬ 1 ИЗ 2): ЕДИНОЕ ЗАКЛЮЧЕНИЕ ПО " + n + " ДОКУМЕНТАМ ===\n" +
+      "Документы относятся к одной истории болезни одного пациента. Сведи отчёты этапов: единая хронология; сверка документов между собой (диагнозы и коды, даты и время, дозы, масса, согласия, результаты в дневнике раньше даты получения) отдельной таблицей; ответы на вопросы этапов к своду; объединение повторных находок (одна ошибка из разных документов — одна находка); окончательные классы по classification.md и колонка «Код ЕК ФСМС (ориентир)». Находку, которую нельзя подтвердить цитатой из отчётов, сними или понизь с пометкой.\n" +
+      "Структура ответа:\n# ПРИЛОЖЕНИЕ 1. АНАЛИТИЧЕСКИЙ ОТЧЁТ АУДИТА (часть 1)\n" +
+      "0. Срочный блок (если не требуется — одна строка).\n1. Шапка (в том числе состав материалов: какие документы есть).\n2. Краткое резюме, счётчик З1 / З2 / Н и итоговая оценка тактики.\n3. Единая хронология Д0…Д+N.\n4. Сверка документов (таблица).\n" +
+      "5. Аудит по разделам 1–4 (и 5 при смерти) с таблицей альтернативных методик и итоговой оценкой тактики.\n6. Находки подробно (сначала З1, затем З2, затем Н), у каждой «док. N, Д…», код ЕК ФСМС (ориентир) и из каких находок этапов она собрана.\n" +
+      "В самом конце выведи строку «РЕЕСТР НАХОДОК» и список «код — класс — раздел — код ЕК ФСМС (ориентир) — суть в 5–8 словах». Не пиши разделы о системности и далее: они будут в следующем запросе. Выполни самопроверку из self-check.md.";
+  }
+
   function promptB(partA) {
     return common(null, SET_B) + "\n\n=== ПЕРВАЯ ЧАСТЬ ОТЧЁТА (уже подготовлена, не переписывай; она содержит хронологию и все находки с привязкой к дням, текст истории болезни здесь не приводится) ===\n" + partA + "\n=== КОНЕЦ ПЕРВОЙ ЧАСТИ ===\n\n=== ЗАДАНИЕ (ЧАСТЬ 2 ИЗ 2) ===\n" +
       "Продолжи отчёт: подготовь вторую часть, опираясь на реестр находок первой части. Не добавляй и не удаляй находки, не меняй классы и счётчик. Структура ответа:\n" +
@@ -599,10 +678,12 @@ button.small { padding: 4px 10px; font-size: .82rem; }
     return out.join("\n");
   }
 
-  var pending = false;
+  // Рисует последний переданный текст (раньше при частых вызовах последний вызов мог потеряться).
+  var pending = false, latest = "";
   function render(text) {
+    latest = text;
     if (pending) return; pending = true;
-    requestAnimationFrame(function () { pending = false; els.report.innerHTML = md(text); });
+    requestAnimationFrame(function () { pending = false; els.report.innerHTML = md(latest); });
   }
 
   function showCounters(text) {
@@ -633,6 +714,9 @@ button.small { padding: 4px 10px; font-size: .82rem; }
     els.runStatus.textContent = ""; els.bar.style.width = "4%";
     els.s3.scrollIntoView({ behavior: "smooth", block: "start" });
     var partA = "", partB = "", note = "";
+    var modeEl = document.querySelector('input[name="mode"]:checked');
+    var docsRun = splitDocs(chart);
+    if (modeEl && modeEl.value === "perdoc" && docsRun.length >= 2) { await runPerDoc(chart, docsRun); return; }
     try {
       var chartObj = { text: chart, digest: false };
       prepareRules(chart);
@@ -663,6 +747,45 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       ctl = null; els.stop.hidden = true; refresh();
     }
   });
+  async function runPerDoc(chart, docsRun) {
+    var stages = [], note = "", partA = "", partB = "", n = docsRun.length;
+    var bar = function (v) { els.bar.style.width = v + "%"; }, ph = function (t) { els.phase.textContent = t; };
+    try {
+      prepareRules(chart);
+      for (var k = 0; k < n; k++) {
+        var d = docsRun[k], obj = { text: d.text, digest: false };
+        if (bytes(d.text) > auditBudget()) {
+          obj = await digestAll(d.text, ctl.signal, ph, function () {});
+          if (!obj.fits) throw { code: "too_big", message: "документ " + d.n + " не удалось сжать до лимита одного запроса" };
+          note += "> Документ " + d.n + " был сжат до выжимки: детали могли быть опущены.\n\n";
+        }
+        ph("Этап " + (k + 1) + " из " + n + ": разбор документа " + d.n + ".");
+        var r = await sample(promptStage(obj, d.n, n), { signal: ctl.signal, modelTier: "complex", cache: false,
+          onText: function (o) { render(note + stages.join("\n\n") + "\n\n" + o.text); } });
+        stages.push(r.text); render(note + stages.join("\n\n")); bar(4 + (k + 1) / n * 50);
+      }
+      var mergeP = promptMerge(stages, n);
+      if (bytes(mergeP) > Math.floor(maxBytes * 0.97)) throw { code: "too_big", message: "отчёты по документам вместе не помещаются в запрос свода; исключите часть документов или используйте режим «единым текстом»" };
+      ph("Свод: единая хронология, сверка документов, находки.");
+      var a = await sample(mergeP, { signal: ctl.signal, modelTier: "complex", cache: false,
+        onText: function (o) { partA = o.text; render(note + partA); } });
+      partA = a.text; render(note + partA); showCounters(partA); bar(80);
+      ph("Свод: системные причины, рекомендации, проект заключения.");
+      var b = await sample(promptB(partA), { signal: ctl.signal, modelTier: "complex", cache: false,
+        onText: function (o) { partB = o.text; render(note + partA + "\n\n" + partB); } });
+      partB = b.text;
+      fullText = note + partA + "\n\n" + partB + "\n\n---\n\n# ПРИЛОЖЕНИЕ 2. ОТЧЁТЫ ПО ОТДЕЛЬНЫМ ДОКУМЕНТАМ\n\n" + stages.join("\n\n");
+      render(fullText); showCounters(partB); if (els.counters.hidden) showCounters(partA);
+      bar(100); ph("Готово: документы разобраны по отдельности (" + n + ") и сведены в единое заключение. Проверьте расчёты и классы: итог за экспертом.");
+      els.saveRow.hidden = false;
+    } catch (e) {
+      var kept = [note, stages.join("\n\n"), partA, partB, (e && e.text) || ""].filter(Boolean).join("\n\n");
+      if (kept) { fullText = kept; render(fullText); els.saveRow.hidden = false; }
+      els.phase.textContent = errText(e); els.phase.className = "status err";
+    } finally {
+      ctl = null; els.stop.hidden = true; refresh();
+    }
+  }
   els.stop.addEventListener("click", function () { if (ctl) ctl.abort(); });
 
   // ---------- Save ----------

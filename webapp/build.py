@@ -4,7 +4,7 @@
 Страница публикуется как Claude Artifact с capabilities {"sample": {}, "downloads": true}.
 При изменении правил навыка (SKILL.md, references/, шаблон) страницу нужно пересобрать и опубликовать заново.
 """
-import json, os, re, zipfile
+import base64, gzip, json, os, re, zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 base = os.path.join(ROOT, ".claude", "skills", "hematology-chart-audit")
@@ -25,7 +25,7 @@ for f in sorted(os.listdir(os.path.join(base, "references"))):
     parts["references/" + f] = open(os.path.join(base, "references", f), encoding="utf8").read()
 parts["template"] = "ШАБЛОН ЗАКЛЮЧЕНИЯ СППВЭ (текст из Shablon_zaklyucheniya_SPPVE.docx):\n" + "\n".join(paras)
 
-data = json.dumps({"parts": parts}, ensure_ascii=False).replace("</", "<\\/")
+data = base64.b64encode(gzip.compress(json.dumps({"parts": parts}, ensure_ascii=False).encode("utf8"), 9)).decode("ascii")  # распаковывается в браузере (DecompressionStream)
 tpl = open(os.path.join(ROOT, "webapp", "template.html"), encoding="utf8").read()
 assert "__SKILL_JSON__" in tpl
 out = os.path.join(ROOT, "webapp", "page.html")
