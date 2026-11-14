@@ -761,7 +761,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
   function promptMerge(stages, n) {
     return common(null, SET_A) + "\n\n=== ОТЧЁТЫ ПО ФРАГМЕНТАМ (документы и части документов; исходные тексты здесь не приводятся; цитаты бери из отчётов) ===\n" + stages.join("\n\n") + "\n=== КОНЕЦ ОТЧЁТОВ ===\n\n" +
       "=== ЗАДАНИЕ (ЧАСТЬ 1 ИЗ 2): ЕДИНОЕ ЗАКЛЮЧЕНИЕ ПО " + n + " ФРАГМЕНТАМ ===\n" +
-      "Фрагменты относятся к одной истории болезни одного пациента (части одного документа идут подряд и могли пересекаться на границе: одинаковые записи из перекрытия не дублируй). Сведи отчёты этапов: единая сокращённая хронология (ключевые события и интервалы, без повторов); сверка документов между собой (диагнозы и коды, даты и время, дозы, масса, согласия, результаты в дневнике раньше даты получения) отдельной таблицей; ответы на вопросы этапов к своду; объединение повторных находок (одна ошибка из разных фрагментов — одна находка); окончательные классы по classification.md и колонка «Код ЕК ФСМС (ориентир)». Находку, которую нельзя подтвердить цитатой из отчётов, сними или понизь с пометкой.\n" +
+      "Фрагменты относятся к одной истории болезни одного пациента (части одного документа идут подряд и могли пересекаться на границе: одинаковые записи из перекрытия не дублируй). Сведи отчёты этапов в ОДИН единый отчёт по всем документам и всем фрагментам (отдельных отчётов по документам и фрагментам не выводи, ссылки на документы и дни остаются в тексте: «док. N, Д…»): единая сокращённая хронология (ключевые события и интервалы, без повторов); сверка документов между собой (диагнозы и коды, даты и время, дозы, масса, согласия, результаты в дневнике раньше даты получения) отдельной таблицей; ответы на вопросы этапов к своду; объединение повторных находок (одна ошибка из разных фрагментов — одна находка); окончательные классы по classification.md и колонка «Код ЕК ФСМС (ориентир)». Находку, которую нельзя подтвердить цитатой из отчётов, сними или понизь с пометкой.\n" +
       "Структура ответа:\n# ПРИЛОЖЕНИЕ 1. ПРОЦЕДУРА ЭКСПЕРТИЗЫ: АНАЛИТИЧЕСКИЙ ОТЧЁТ АУДИТА (часть 1)\n" +
       "0. Срочный блок (если не требуется — одна строка).\n1. Шапка (в том числе состав материалов: какие документы есть, какие разбирались по частям).\n2. Краткое резюме, счётчик З1 / З2 / Н и итоговая оценка тактики.\n3. Единая хронология Д0…Д+N.\n4. Сверка документов (таблица).\n" +
       "5. Аудит по разделам 1–4 (и 5 при смерти) с таблицей альтернативных методик и итоговой оценкой тактики.\n6. Находки подробно (сначала З1, затем З2, затем Н), у каждой ссылка «док. N, Д…», код ЕК ФСМС (ориентир) и из каких находок этапов она собрана.\n" +
@@ -787,7 +787,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
     var b = await sample(promptB(partA), { signal: ctl.signal, modelTier: "complex", cache: false, onText: function (o) { render(partA + "\n\n" + o.text); } });
     partB = b.text;
     var split = units.filter(function (u) { return u.part; }).length;
-    return { partA: partA, partB: partB, stages: stages, appendix: "# ПРИЛОЖЕНИЕ 2. ОТЧЁТЫ ПО ФРАГМЕНТАМ (" + n + (split ? "; из них частей больших документов: " + split : "") + ")\n\n" + stages.join("\n\n") };
+    return { partA: partA, partB: partB, stages: stages, appendix: ""};
   }
 
   function promptBatch(items) {
@@ -821,7 +821,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
           var units = unitsFor(g.length === 1 ? [{ n: g[0].n, text: g[0].text }] : g);
           if (unitsFit(units.length) && !units.some(function (u) { return u.tooBig; })) {
             var res = await auditUnits(units, label, ph, function () {});
-            a = { text: res.partA }; b = { text: res.partB + "\n\n" + res.appendix };
+            a = { text: res.partA }; b = { text: res.partB };
             head += "> " + label + ": текст больше лимита одного запроса, разобран по фрагментам (" + units.length + ") со сводом.\n\n";
           } else {
             obj = await digestAll(text, ctl.signal, ph, function () {});
@@ -970,8 +970,8 @@ button.small { padding: 4px 10px; font-size: .82rem; }
         var ju = unitsFor(jd);
         if (unitsFit(ju.length) && !ju.some(function (u) { return u.tooBig; })) {
           var jr = await auditUnits(ju, "", function (t) { els.phase.textContent = t; }, function (v) { els.bar.style.width = v + "%"; });
-          var jn = "> Текст больше лимита одного запроса: разрезан по смысловым границам на " + ju.length + " фрагментов (с перекрытием и справкой из начала документа), каждый разобран полностью, затем свод. Отчёты по фрагментам — в Приложении 2.\n\n";
-          fullText = jn + compose(jr.partA, jr.partB) + "\n\n---\n\n" + jr.appendix; render(fullText);
+          var jn = "> Текст больше лимита одного запроса: разрезан по смысловым границам на " + ju.length + " фрагментов (с перекрытием и справкой из начала документа), каждый разобран полностью, результаты сведены в один единый отчёт.\n\n";
+          fullText = jn + compose(jr.partA, jr.partB); render(fullText);
           showCounters(jr.partB); if (els.counters.hidden) showCounters(jr.partA);
           els.bar.style.width = "100%"; els.phase.textContent = "Готово: разобрано по фрагментам (" + ju.length + ") со сводом. Проверьте расчёты и классы: итог за экспертом."; els.saveRow.hidden = false;
           return;
@@ -1010,7 +1010,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       if (units.some(function (u) { return u.tooBig; }) || !unitsFit(units.length)) throw { code: "too_big", message: "документов или частей слишком много для одного свода (" + units.length + "); исключите часть документов" };
       res = await auditUnits(units, "", ph, bar);
       var split = units.filter(function (u) { return u.part; }).length;
-      fullText = (split ? "> Документы больше лимита одного запроса разрезаны по смысловым границам (частей: " + split + ").\n\n" : "") + compose(res.partA, res.partB) + "\n\n---\n\n" + res.appendix;
+      fullText = (split ? "> Документы больше лимита одного запроса разрезаны по смысловым границам (частей: " + split + ").\n\n" : "") + compose(res.partA, res.partB);
       render(fullText); showCounters(res.partB); if (els.counters.hidden) showCounters(res.partA);
       bar(100); ph("Готово: фрагменты разобраны по отдельности (" + units.length + ") и сведены в единое заключение. Проверьте расчёты и классы: итог за экспертом.");
       els.saveRow.hidden = false;
