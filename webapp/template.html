@@ -152,7 +152,8 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       <legend class="label">Порядок экспертизы для нескольких документов</legend>
       <label class="check"><input type="radio" name="mode" value="joint" checked> <span>Единым текстом (все документы в одном запросе; если не помещается, текст сжимается)</span></label>
       <label class="check"><input type="radio" name="mode" value="perdoc"> <span>Сначала каждый документ отдельно, затем единое заключение по всем документам (больше запросов, без сжатия общего текста)</span></label>
-      <label class="check"><input type="radio" name="mode" value="batch"> <span>Несколько историй болезни (пакет): документы группируются по пациентам, каждая история разбирается отдельно, затем сводная таблица по всем историям (2 запроса на историю и 1 на свод; для небольших историй, не более 10)</span></label>
+      <label class="check"><input type="radio" name="mode" value="batch"> <span>Несколько историй болезни (пакет): документы группируются по пациентам, на каждую историю отдельная экспертиза (2 запроса на историю; не более 10 историй); сводный отчёт по пакету по желанию (ещё 1 запрос). Включается автоматически, если документы относятся к разным пациентам</span></label>
+      <label class="check" id="sumRow" hidden><input type="checkbox" id="batchSummary"> <span>Добавить сводный отчёт по пакету (сводная таблица по всем историям). По умолчанию выключено: выдаётся отдельная экспертиза на каждую историю.</span></label>
     </fieldset>
     <label class="check" for="confirm">
       <input id="confirm" type="checkbox">
@@ -416,6 +417,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
     docs.forEach(function (d) { var r = find(d.n); if (!map[r]) { map[r] = []; order.push(r); } map[r].push(d); });
     return order.map(function (r) { return map[r]; });
   }
+  var modeTouched = false;
   function currentMode() { var m = document.querySelector('input[name="mode"]:checked'); return m ? m.value : "joint"; }
   function overlap(a, b) { var ka = Object.keys(a), kb = Object.keys(b); if (!ka.length || !kb.length) return 0; return ka.some(function (k) { return b[k]; }) ? 1 : -1; }
   // Сравнение документа с остальными загруженными: «same», «conflict» или «unknown» и пояснение.
@@ -459,7 +461,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       blocks.forEach(function (b, idx) { META[n + idx + 1] = b.sig; parts.push(total === 1 ? b.text : "=== ДОКУМЕНТ " + (n + idx + 1) + " ===\n" + b.text); });
       els.text.value = parts.join("\n\n");
       applyMask();
-      var nd = countDocs(els.text.value); notes.push(nd ? "Документов в тексте: " + nd + ". Все они будут разобраны как один случай." : "В тексте один документ.");
+      var nd = countDocs(els.text.value); notes.push(nd ? "Документов в тексте: " + nd + ". Один пациент: единый отчёт; документы разных пациентов разбираются отдельными экспертизами (режим выбирается ниже)." : "В тексте один документ.");
     }
     els.fileStatus.className = "status" + (anyErr ? " err" : "");
     els.fileStatus.textContent = notes.join("\n");
@@ -534,7 +536,13 @@ button.small { padding: 4px 10px; font-size: .82rem; }
     var box = $("docs"), t = els.text.value, docs = splitDocs(t);
     box.innerHTML = "";
     $("modeBox").hidden = docs.length < 2;
-    if (docs.length < 2) { box.hidden = true; return; }
+    if (docs.length < 2) { box.hidden = true; modeTouched = false; return; }
+    // Документы разных пациентов (у каждого есть признаки пациента, групп не меньше двух): по умолчанию отдельная экспертиза на каждого.
+    if (!modeTouched && currentMode() === "joint") {
+      var gr0 = groupDocs(docs), allId = docs.every(function (d) { var m = META[+d.n]; return m && (Object.keys(m.iin).length || Object.keys(m.hist).length || Object.keys(m.fio).length || Object.keys(m.dob).length); });
+      if (gr0.length >= 2 && gr0.length <= 10 && allId) document.querySelector('input[name="mode"][value="batch"]').checked = true;
+    }
+    $("sumRow").hidden = currentMode() !== "batch";
     box.hidden = false;
     var total = docs.reduce(function (a, d) { return a + d.text.length; }, 0) || 1;
     var present = docs.map(function (d) { return +d.n; }), conflicts = 0, batch = currentMode() === "batch", caseOf = {}, groups = [];
@@ -557,7 +565,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       row.appendChild(lab); row.appendChild(btn); box.appendChild(row);
     });
     var note = document.createElement("div"); note.className = "status" + (conflicts && !batch ? " err" : "");
-    note.textContent = batch ? ("Пакетный режим: найдено историй " + groups.length + " (документы сгруппированы по ИИН, № истории болезни, ФИО с датой рождения; документ без этих данных считается отдельной историей). Запросов к Claude: " + (groups.length * 2 + 1) + "." + (groups.length > 10 ? " Историй больше 10: разделите пакет." : "")) : conflicts ? "Похоже, загружены документы разных пациентов. Исключите лишние: экспертиза проводится по одной истории болезни." : "Совпадение пациента проверено по ИИН, № истории болезни, дате рождения и ФИО в исходных файлах (до закрытия). Эти данные в запрос не уходят.";
+    note.textContent = batch ? ("Пакетный режим: найдено историй " + groups.length + " (документы сгруппированы по ИИН, № истории болезни, ФИО с датой рождения; документ без этих данных считается отдельной историей). Запросов к Claude: " + (groups.length * 2 + (($("batchSummary") && $("batchSummary").checked) ? 1 : 0)) + "." + (groups.length > 10 ? " Историй больше 10: разделите пакет." : "")) : conflicts ? "Похоже, загружены документы разных пациентов. Исключите лишние: экспертиза проводится по одной истории болезни." : "Совпадение пациента проверено по ИИН, № истории болезни, дате рождения и ФИО в исходных файлах (до закрытия). Эти данные в запрос не уходят.";
     box.appendChild(note);
   }
   // Убирает номера страниц, декоративные линии и повторные абзацы; длинный дословный повтор заменяется пометкой, чтобы совпадение дневников оставалось видно.
@@ -586,7 +594,8 @@ button.small { padding: 4px 10px; font-size: .82rem; }
   });
   els.text.addEventListener("input", function () { els.confirm.checked = false; refresh(); });
   els.confirm.addEventListener("change", refresh);
-  Array.prototype.forEach.call(document.querySelectorAll('input[name="mode"]'), function (r) { r.addEventListener("change", refresh); });
+  $("batchSummary").addEventListener("change", refresh);
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="mode"]'), function (r) { r.addEventListener("change", function () { modeTouched = true; refresh(); }); });
   els.text.addEventListener("change", function () { applyMask(); refresh(); });
 
   // ---------- Size budget and digest ----------
@@ -845,14 +854,19 @@ button.small { padding: 4px 10px; font-size: .82rem; }
         render(reports.join("\n\n---\n\n"));
       }
       RUN_HIST = "пакет из " + N + " историй";
-      ph("Сводный отчёт по пакету.");
-      var c = await sample(promptBatch(items), { signal: ctl.signal, modelTier: "complex", cache: false, onText: function (o) { render(o.text + "\n\n---\n\n" + reports.join("\n\n---\n\n")); } });
-      summary = c.text;
-      fullText = summary + "\n\n---\n\n" + reports.join("\n\n---\n\n");
+      var withSum = !!($("batchSummary") && $("batchSummary").checked);
+      if (withSum) {
+        ph("Сводный отчёт по пакету.");
+        var c = await sample(promptBatch(items), { signal: ctl.signal, modelTier: "complex", cache: false, onText: function (o) { render(o.text + "\n\n---\n\n" + reports.join("\n\n---\n\n")); } });
+        summary = c.text;
+        fullText = summary + "\n\n---\n\n" + reports.join("\n\n---\n\n");
+      } else {
+        fullText = reports.join("\n\n---\n\n");
+      }
       render(fullText);
       els.counters.hidden = false;
       els.counters.innerHTML = '<div class="counter z1"><b>' + sum[0] + '</b><span>З1 по пакету</span></div><div class="counter z2"><b>' + sum[1] + '</b><span>З2 по пакету</span></div><div class="counter n"><b>' + sum[2] + '</b><span>Н по пакету</span></div>';
-      bar(100); ph("Готово: разобрано историй " + N + ", сводный отчёт в начале. Проверьте расчёты и классы: итог за экспертом.");
+      bar(100); ph("Готово: подготовлено отдельных экспертиз: " + N + (withSum ? ", сводный отчёт в начале" : "") + ". Проверьте расчёты и классы: итог за экспертом.");
       els.saveRow.hidden = false;
     } catch (e) {
       var kept = [summary, reports.join("\n\n---\n\n"), (e && e.text) || ""].filter(Boolean).join("\n\n");
