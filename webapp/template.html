@@ -402,7 +402,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
     return s;
   }
   // Группировка документов по пациентам (пакетный режим): совпадение ИИН или № истории, либо ФИО вместе с датой рождения; при разных ИИН или датах рождения — разные пациенты.
-  function groupDocs(docs) {
+  function groupDocs(docs, attachNoId) {
     var parent = {};
     docs.forEach(function (d) { parent[d.n] = d.n; });
     var find = function (x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
@@ -413,6 +413,14 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       if (iin === -1 || db === -1) continue;
       if (iin === 1 || h === 1 || (fi === 1 && db === 1)) parent[find(docs[j].n)] = find(docs[i].n);
     }
+    // Документ без признаков пациента (ИИН, № истории, ФИО, дата рождения) относится к предыдущему документу: отдельным пациентом считается только документ с признаками, не совпадающими с остальными.
+    var hasId = function (d) { var m = META[+d.n]; return !!(m && (Object.keys(m.iin).length || Object.keys(m.hist).length || Object.keys(m.fio).length || Object.keys(m.dob).length)); };
+    if (attachNoId) docs.forEach(function (d, i) {
+      if (hasId(d)) return;
+      var k = -1;
+      if (i > 0) k = i - 1; else { for (var q = 1; q < docs.length; q++) if (hasId(docs[q])) { k = q; break; } }
+      if (k >= 0) parent[find(d.n)] = find(docs[k].n);
+    });
     var order = [], map = {};
     docs.forEach(function (d) { var r = find(d.n); if (!map[r]) { map[r] = []; order.push(r); } map[r].push(d); });
     return order.map(function (r) { return map[r]; });
@@ -537,16 +545,16 @@ button.small { padding: 4px 10px; font-size: .82rem; }
     box.innerHTML = "";
     $("modeBox").hidden = docs.length < 2;
     if (docs.length < 2) { box.hidden = true; modeTouched = false; return; }
-    // Документы разных пациентов (у каждого есть признаки пациента, групп не меньше двух): по умолчанию отдельная экспертиза на каждого.
+    // Документы разных пациентов (признаки пациента не совпадают, групп не меньше двух): отдельный отчёт на каждого; единый отчёт только если все документы одного пациента.
     if (!modeTouched && currentMode() === "joint") {
-      var gr0 = groupDocs(docs), allId = docs.every(function (d) { var m = META[+d.n]; return m && (Object.keys(m.iin).length || Object.keys(m.hist).length || Object.keys(m.fio).length || Object.keys(m.dob).length); });
-      if (gr0.length >= 2 && gr0.length <= 10 && allId) document.querySelector('input[name="mode"][value="batch"]').checked = true;
+      var gr0 = groupDocs(docs, true);
+      if (gr0.length >= 2 && gr0.length <= 10) document.querySelector('input[name="mode"][value="batch"]').checked = true;
     }
     $("sumRow").hidden = currentMode() !== "batch";
     box.hidden = false;
     var total = docs.reduce(function (a, d) { return a + d.text.length; }, 0) || 1;
     var present = docs.map(function (d) { return +d.n; }), conflicts = 0, batch = currentMode() === "batch", caseOf = {}, groups = [];
-    if (batch) { groups = groupDocs(docs); groups.forEach(function (g, gi) { g.forEach(function (d) { caseOf[d.n] = gi + 1; }); }); }
+    if (batch) { groups = groupDocs(docs, !modeTouched); groups.forEach(function (g, gi) { g.forEach(function (d) { caseOf[d.n] = gi + 1; }); }); }
     docs.forEach(function (d) {
       var row = document.createElement("div"); row.className = "docrow";
       var sc = sameCheck(+d.n, present); if (sc.st === "conflict") conflicts++;
@@ -565,7 +573,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       row.appendChild(lab); row.appendChild(btn); box.appendChild(row);
     });
     var note = document.createElement("div"); note.className = "status" + (conflicts && !batch ? " err" : "");
-    note.textContent = batch ? ("Пакетный режим: найдено историй " + groups.length + " (документы сгруппированы по ИИН, № истории болезни, ФИО с датой рождения; документ без этих данных считается отдельной историей). Запросов к Claude: " + (groups.length * 2 + (($("batchSummary") && $("batchSummary").checked) ? 1 : 0)) + "." + (groups.length > 10 ? " Историй больше 10: разделите пакет." : "")) : conflicts ? "Похоже, загружены документы разных пациентов. Исключите лишние: экспертиза проводится по одной истории болезни." : "Совпадение пациента проверено по ИИН, № истории болезни, дате рождения и ФИО в исходных файлах (до закрытия). Эти данные в запрос не уходят.";
+    note.textContent = batch ? ("Пакетный режим: найдено историй " + groups.length + " (документы сгруппированы по ИИН, № истории болезни, ФИО с датой рождения; документ без этих данных " + (modeTouched ? "считается отдельной историей" : "относится к предыдущему документу") + "). Запросов к Claude: " + (groups.length * 2 + (($("batchSummary") && $("batchSummary").checked) ? 1 : 0)) + "." + (groups.length > 10 ? " Историй больше 10: разделите пакет." : "")) : conflicts ? "Похоже, загружены документы разных пациентов. Исключите лишние: экспертиза проводится по одной истории болезни." : "Совпадение пациента проверено по ИИН, № истории болезни, дате рождения и ФИО в исходных файлах (до закрытия). Эти данные в запрос не уходят.";
     box.appendChild(note);
   }
   // Убирает номера страниц, декоративные линии и повторные абзацы; длинный дословный повтор заменяется пометкой, чтобы совпадение дневников оставалось видно.
@@ -971,7 +979,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
     var docsRun = splitDocs(chart);
     if (modeEl && modeEl.value === "perdoc" && docsRun.length >= 2) { await runPerDoc(chart, docsRun); return; }
     if (modeEl && modeEl.value === "batch" && docsRun.length >= 2) {
-      var grs = groupDocs(docsRun);
+      var grs = groupDocs(docsRun, !modeTouched);
       if (grs.length > 10) { els.phase.textContent = "В пакете больше 10 историй: разделите пакет."; els.phase.className = "status err"; ctl = null; els.stop.hidden = true; refresh(); return; }
       await runBatch(chart, grs); return;
     }
