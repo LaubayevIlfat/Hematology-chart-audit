@@ -442,6 +442,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
     if (bad.length) return { st: "conflict", txt: "⚠ не совпадает: " + uniq(bad).join(", ") };
     return { st: "unknown", txt: "идентификаторы для сравнения не найдены: проверьте вручную" };
   }
+  function maxDocNo(t) { var mx = 0, m, re = /^=== ДОКУМЕНТ (\d+) ===$/gm; while ((m = re.exec(t)) !== null) mx = Math.max(mx, +m[1]); return mx; }
   function countDocs(t) { return (t.match(DOC_HEAD) || []).length; }
 
   async function handleFiles(list) {
@@ -463,7 +464,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       }
     }
     if (blocks.length) {
-      var existing = els.text.value.trim(), n = countDocs(existing);
+      var existing = els.text.value.trim(), n = maxDocNo(existing);
       if (existing && n === 0) { existing = "=== ДОКУМЕНТ 1 ===\n" + existing; n = 1; }
       var total = n + blocks.length, parts = existing ? [existing] : [];
       blocks.forEach(function (b, idx) { META[n + idx + 1] = b.sig; parts.push(total === 1 ? b.text : "=== ДОКУМЕНТ " + (n + idx + 1) + " ===\n" + b.text); });
@@ -566,7 +567,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
         if (!ds) return;
         els.text.value = (cur.slice(0, ds.start) + cur.slice(ds.end)).replace(/\n{3,}/g, "\n\n").trim();
         var left = splitDocs(els.text.value);
-        if (left.length === 1) els.text.value = left[0].text;
+        if (left.length === 1) { var keep = META[+left[0].n]; META = {}; if (keep) META[1] = keep; els.text.value = left[0].text; }
         els.fileStatus.className = "status"; els.fileStatus.textContent = "Документ " + d.n + " исключён из текста.";
         els.confirm.checked = false; refresh();
       });
@@ -822,6 +823,22 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       "Идентификаторы не включай; истории называй «История 1», «История 2» и т. д.";
   }
 
+  // Повтор при временных сбоях (сеть, перегрузка, лимит запросов): не нужно отправлять весь пакет заново.
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  async function withRetry(fn, ph, what) {
+    for (var at = 1; ; at++) {
+      try { return await fn(); }
+      catch (e) {
+        var c = e && e.code;
+        if (at >= 3 || c === "not_granted" || c === "too_big" || c === "prompt_too_large" || c === "cancelled" || (ctl && ctl.signal && ctl.signal.aborted)) throw e;
+        var wait = c === "rate_limited" ? 20000 : 4000 * at;
+        ph(what + ": временный сбой, повтор " + at + " из 2 через " + Math.round(wait / 1000) + " с…");
+        await sleep(wait);
+      }
+    }
+  }
+  function hashStr(t) { var h = 5381; for (var i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return h + ":" + t.length; }
+  var BATCH_CACHE = {};
   async function runBatch(chart, groups) {
     var items = [], reports = [], N = groups.length, summary = "";
     var bar = function (v) { els.bar.style.width = v + "%"; }, ph = function (t) { els.phase.textContent = t; };
@@ -833,24 +850,33 @@ button.small { padding: 4px 10px; font-size: .82rem; }
         var hist = Object.keys((META[+g[0].n] || {}).hist || {})[0];
         RUN_HIST = hist ? hist : "см. текст истории (" + label + ")";
         prepareRules(text);
-        var obj = { text: text, digest: false }, note = "", head = "# " + label.toUpperCase() + "\n\n", done = reports.join("\n\n---\n\n"), a = null, b = null;
+        var ckey = hashStr(text), hc = "# " + label.toUpperCase() + "\n\n";
+        if (BATCH_CACHE[ckey]) {
+          var c0 = BATCH_CACHE[ckey];
+          reports.push(hc + c0.tail.split("{L}").join(label) + c0.body);
+          if (c0.cm) { sum[0] += +c0.cm[1]; sum[1] += +c0.cm[2]; sum[2] += +c0.cm[3]; }
+          items.push({ label: "История " + (gi + 1), counter: c0.item.counter, registry: c0.item.registry, summary: c0.item.summary });
+          bar(4 + (gi + 1) / N * 80); render(reports.join("\n\n---\n\n")); ph(label + ": готова (результат предыдущей попытки).");
+          continue;
+        }
+        var obj = { text: text, digest: false }, note = "", head = hc, done = reports.join("\n\n---\n\n"), a = null, b = null;
         if (bytes(text) > auditBudget()) {
           var units = unitsFor(g.length === 1 ? [{ n: g[0].n, text: g[0].text }] : g);
           if (unitsFit(units.length) && !units.some(function (u) { return u.tooBig; })) {
-            var res = await auditUnits(units, label, ph, function () {});
+            var res = await withRetry(function () { return auditUnits(units, label, ph, function () {}); }, ph, label);
             a = { text: res.partA }; b = { text: res.partB };
             head += "> " + label + ": текст больше лимита одного запроса, разобран по фрагментам (" + units.length + ") со сводом.\n\n";
           } else {
-            obj = await digestAll(text, ctl.signal, ph, function () {});
+            obj = await withRetry(function () { return digestAll(text, ctl.signal, ph, function () {}); }, ph, label);
             if (!obj.fits) throw { code: "too_big", message: label + " не удалось сжать до лимита; разберите её отдельно" };
             head += "> " + label + ": текст сжат до выжимки, детали могли быть опущены.\n\n";
           }
         }
         if (!a) {
           ph(label + ": часть 1 (находки).");
-          a = await sample(promptA(obj), { signal: ctl.signal, modelTier: "complex", cache: false, onText: function (o) { render(done + "\n\n" + head + o.text); } });
+          a = await withRetry(function () { return sample(promptA(obj), { signal: ctl.signal, modelTier: "complex", cache: false, onText: function (o) { render(done + "\n\n" + head + o.text); } }); }, ph, label + ", часть 1");
           ph(label + ": часть 2 (системность, заключение).");
-          b = await sample(promptB(a.text), { signal: ctl.signal, modelTier: "complex", cache: false, onText: function (o) { render(done + "\n\n" + head + a.text + "\n\n" + o.text); } });
+          b = await withRetry(function () { return sample(promptB(a.text), { signal: ctl.signal, modelTier: "complex", cache: false, onText: function (o) { render(done + "\n\n" + head + a.text + "\n\n" + o.text); } }); }, ph, label + ", часть 2");
         }
         reports.push(head + compose(a.text, b.text));
         var cm = a.text.match(/З1\s*[=:]\s*(\d+)\s*\/\s*З2\s*[=:]\s*(\d+)\s*\/\s*Н\s*[=:]\s*(\d+)/);
@@ -858,6 +884,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
         var ri = a.text.indexOf("РЕЕСТР НАХОДОК"), si = b.text.indexOf("КРАТКОЕ РЕЗЮМЕ");
         items.push({ label: "История " + (gi + 1), counter: cm ? "З1 = " + cm[1] + " / З2 = " + cm[2] + " / Н = " + cm[3] : "не распознан",
           registry: ri >= 0 ? a.text.slice(ri, ri + 6000) : a.text.slice(-4000), summary: si >= 0 ? b.text.slice(si, si + 4000) : b.text.slice(-3000) });
+        BATCH_CACHE[ckey] = { tail: head.slice(hc.length).split(label).join("{L}"), body: compose(a.text, b.text), cm: cm, item: items[items.length - 1] };
         bar(4 + (gi + 1) / N * 80);
         render(reports.join("\n\n---\n\n"));
       }
@@ -875,6 +902,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       els.counters.hidden = false;
       els.counters.innerHTML = '<div class="counter z1"><b>' + sum[0] + '</b><span>З1 по пакету</span></div><div class="counter z2"><b>' + sum[1] + '</b><span>З2 по пакету</span></div><div class="counter n"><b>' + sum[2] + '</b><span>Н по пакету</span></div>';
       bar(100); ph("Готово: подготовлено отдельных экспертиз: " + N + (withSum ? ", сводный отчёт в начале" : "") + ". Проверьте расчёты и классы: итог за экспертом.");
+      BATCH_CACHE = {};
       els.saveRow.hidden = false;
     } catch (e) {
       var kept = [summary, reports.join("\n\n---\n\n"), (e && e.text) || ""].filter(Boolean).join("\n\n");
