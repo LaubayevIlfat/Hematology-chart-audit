@@ -82,6 +82,14 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .report ul, .report ol { margin: .4em 0; padding-left: 1.3em; }
 .report li { margin: .2em 0; }
 .report hr { border: 0; border-top: 1px solid var(--line); margin: 1.4em 0; }
+/* Пакет историй: каждое заключение в своей цветной карточке с крупной плашкой пациента */
+.histcard { --hc: #0b6b73; --hc-fg: #fff; border: 2px solid var(--hc); border-radius: 12px; margin: 2.2em 0 1.6em; padding: 0 16px 14px; background: var(--surface); }
+.histcard.c1 { --hc: #7a3b8f; } .histcard.c2 { --hc: #8a5a00; } .histcard.c3 { --hc: #2a5fa8; } .histcard.c4 { --hc: #8f2b4c; } .histcard.c5 { --hc: #3d7a2e; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .histcard { --hc: #5cc0c8; --hc-fg: #0a1a1b; } :root:not([data-theme="light"]) .histcard.c1 { --hc: #c79be0; } :root:not([data-theme="light"]) .histcard.c2 { --hc: #e0b85c; } :root:not([data-theme="light"]) .histcard.c3 { --hc: #8cb4f0; } :root:not([data-theme="light"]) .histcard.c4 { --hc: #f09ab5; } :root:not([data-theme="light"]) .histcard.c5 { --hc: #8fd07a; } }
+:root[data-theme="dark"] .histcard { --hc: #5cc0c8; --hc-fg: #0a1a1b; } :root[data-theme="dark"] .histcard.c1 { --hc: #c79be0; } :root[data-theme="dark"] .histcard.c2 { --hc: #e0b85c; } :root[data-theme="dark"] .histcard.c3 { --hc: #8cb4f0; } :root[data-theme="dark"] .histcard.c4 { --hc: #f09ab5; } :root[data-theme="dark"] .histcard.c5 { --hc: #8fd07a; }
+.report .histbanner { background: var(--hc); color: var(--hc-fg); margin: 0 -16px 14px; padding: 12px 16px; border-radius: 10px 10px 0 0; font-size: 1.15rem; letter-spacing: .02em; }
+.histcard h1:not(.histbanner) { font-size: 1.2rem; }
+@media print { .histcard { break-before: page; } }
 .tablewrap { overflow-x: auto; margin: .8em 0; max-width: 100%; }
 .report table { border-collapse: collapse; font-size: .86rem; min-width: 100%; }
 .report th, .report td { border: 1px solid var(--line); padding: 6px 9px; vertical-align: top; text-align: left; }
@@ -271,7 +279,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
     textInfo: $("textInfo"), confirm: $("confirm"), run: $("run"), stop: $("stop"), runStatus: $("runStatus"),
     s3: $("s3"), phase: $("phase"), bar: $("barFill"), report: $("report"), counters: $("counters"),
     saveRow: $("saveRow"), saveStatus: $("saveStatus"), expNo: $("expNo"), histNo: $("histNo") };
-  var sample = null, downloads = null, ctl = null, fullText = "", RUN_HIST = "";
+  var sample = null, downloads = null, ctl = null, fullText = "", RUN_HIST = "", RUN_SUFFIX = "";
 
   // ---------- Capabilities ----------
   (async function () {
@@ -701,7 +709,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       "- Если чего-то нет в представленных материалах, об этом не пиши: не перечисляй отсутствующие материалы и записи, не пиши «не найдено», «отсутствует», «не представлено», не выноси это в «требует уточнения», в вопросы и в ограничения. Какие материалы использованы, указано в шапке. Из отсутствия записи дефект не выводи, кроме случаев, которые classification.md прямо разрешает оформить как находку (например, согласие). Если время события не указано, интервал не считай. Каждый интервал и расчёт пересчитай; формулу и исходные значения укажи, пометку «расчёт аудитора, требует проверки врачом» не ставь.",
       "- Отвечай по-русски, оформляй markdown: заголовки #, таблицы, списки. Пиши все коды находок в виде З1-01, З2-01, Н-01.",
       (chart !== null && /^=== ДОКУМЕНТ \d+ ===$/m.test(chart.text)) ? "- Текст состоит из нескольких документов ОДНОГО пациента (например, амбулаторная карта, стационар, выписки, лабораторные и инструментальные протоколы), разделённых строками «=== ДОКУМЕНТ N ===». Это один случай и одна экспертиза: собери единую хронологию по всем документам, сопоставь данные между ними, расхождения между документами (даты, дозы, диагнозы, коды, масса) оформляй как находки по общим правилам, находки не группируй по документам и не дублируй одну и ту же ошибку из разных документов. В шапке перечисли состав материалов (какие документы представлены, каких не хватает); в находках ссылайся на документ как «док. N» и день Д…, N — только номер из разделителя." : "",
-      "- Реквизиты: номер экспертизы: " + (els.expNo.value.trim() || "не присвоен (вносит человек)") + "; дата проверки: " + today() + "; № истории болезни: " + (RUN_HIST || els.histNo.value.trim() || "не указан") + ".",
+      "- Реквизиты: номер экспертизы: " + (els.expNo.value.trim() ? (els.expNo.value.trim() + (RUN_SUFFIX ? "/" + RUN_SUFFIX : "")) : "не присвоен (вносит человек)") + "; дата проверки: " + today() + "; № истории болезни: " + (RUN_HIST || els.histNo.value.trim() || "не указан") + ".",
       "",
       chart === null ? "" : ("=== ТЕКСТ ИСТОРИИ БОЛЕЗНИ" + (chart.digest ? " (СЖАТАЯ ВЫЖИМКА: исходный текст сокращён по частям; дозы, время и значения сохранены дословно, но отдельные детали могли быть опущены; не делай выводов об отсутствии записи по выжимке, помечай такие случаи «требует уточнения»)" : "") + " ===\n" + chart.text + "\n=== КОНЕЦ ТЕКСТА ИСТОРИИ БОЛЕЗНИ ===")
     ].join("\n");
@@ -855,7 +863,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
   function hashStr(t) { var h = 5381; for (var i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return h + ":" + t.length; }
   var BATCH_CACHE = {};
   async function runBatch(chart, groups) {
-    var items = [], reports = [], N = groups.length, summary = "";
+    var items = [], reports = [], N = groups.length, summary = "", metaRows = [];
     var bar = function (v) { els.bar.style.width = v + "%"; }, ph = function (t) { els.phase.textContent = t; };
     var sum = [0, 0, 0];
     try {
@@ -865,12 +873,16 @@ button.small { padding: 4px 10px; font-size: .82rem; }
         var hist = Object.keys((META[+g[0].n] || {}).hist || {})[0];
         RUN_HIST = hist ? hist : "см. текст истории (" + label + ")";
         prepareRules(text);
-        var ckey = hashStr(text), hc = "# " + label.toUpperCase() + "\n\n";
+        RUN_SUFFIX = String(gi + 1);
+        var docNums = g.map(function (d) { return d.n; }).join(", ");
+        metaRows.push({ k: gi + 1, hist: hist || "", docs: docNums, counter: "" });
+        var ckey = hashStr(text), hc = "# " + label.toUpperCase() + " · " + (hist ? "№ истории болезни: " + hist + " · " : "") + "документы: " + docNums + "\n\n";
         if (BATCH_CACHE[ckey]) {
           var c0 = BATCH_CACHE[ckey];
           reports.push(hc + c0.tail.split("{L}").join(label) + c0.body);
           if (c0.cm) { sum[0] += +c0.cm[1]; sum[1] += +c0.cm[2]; sum[2] += +c0.cm[3]; }
           items.push({ label: "История " + (gi + 1), counter: c0.item.counter, registry: c0.item.registry, summary: c0.item.summary });
+          metaRows[metaRows.length - 1].counter = c0.item.counter;
           bar(4 + (gi + 1) / N * 80); render(reports.join("\n\n---\n\n")); ph(label + ": готова (результат предыдущей попытки).");
           continue;
         }
@@ -899,19 +911,23 @@ button.small { padding: 4px 10px; font-size: .82rem; }
         var ri = a.text.indexOf("РЕЕСТР НАХОДОК"), si = b.text.indexOf("КРАТКОЕ РЕЗЮМЕ");
         items.push({ label: "История " + (gi + 1), counter: cm ? "З1 = " + cm[1] + " / З2 = " + cm[2] + " / Н = " + cm[3] : "не распознан",
           registry: ri >= 0 ? a.text.slice(ri, ri + 6000) : a.text.slice(-4000), summary: si >= 0 ? b.text.slice(si, si + 4000) : b.text.slice(-3000) });
+        metaRows[metaRows.length - 1].counter = items[items.length - 1].counter;
         BATCH_CACHE[ckey] = { tail: head.slice(hc.length).split(label).join("{L}"), body: compose(a.text, b.text), cm: cm, item: items[items.length - 1] };
         bar(4 + (gi + 1) / N * 80);
         render(reports.join("\n\n---\n\n"));
       }
       RUN_HIST = "пакет из " + N + " историй";
+      function pk(c, key) { var m = (c || "").match(new RegExp(key + "\\s*=\\s*(\\d+)")); return m ? m[1] : "?"; }
+      var overview = "# ПАКЕТ: " + N + " " + (N % 10 === 1 && N !== 11 ? "ИСТОРИЯ" : "ИСТОРИИ") + " (ОГЛАВЛЕНИЕ)\n\nКаждое заключение ниже оформлено отдельной цветной карточкой «ИСТОРИЯ k ИЗ " + N + "»; номер экспертизы — с суффиксом /k.\n\n| № | № истории болезни | Документы | З1 | З2 | Н |\n|---|---|---|---|---|---|\n" +
+        metaRows.map(function (r) { return "| " + r.k + " | " + (r.hist || "—") + " | " + r.docs + " | " + pk(r.counter, "З1") + " | " + pk(r.counter, "З2") + " | " + pk(r.counter, "Н") + " |"; }).join("\n") + "\n\n---\n\n";
       var withSum = !!($("batchSummary") && $("batchSummary").checked);
       if (withSum) {
         ph("Сводный отчёт по пакету.");
         var c = await sample(promptBatch(items), { signal: ctl.signal, modelTier: "complex", cache: false, onText: function (o) { render(o.text + "\n\n---\n\n" + reports.join("\n\n---\n\n")); } });
         summary = c.text;
-        fullText = summary + "\n\n---\n\n" + reports.join("\n\n---\n\n");
+        fullText = overview + summary + "\n\n---\n\n" + reports.join("\n\n");
       } else {
-        fullText = reports.join("\n\n---\n\n");
+        fullText = overview + reports.join("\n\n");
       }
       render(fullText);
       els.counters.hidden = false;
@@ -924,7 +940,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       if (kept) { fullText = kept; render(fullText); els.saveRow.hidden = false; }
       els.phase.textContent = errText(e); els.phase.className = "status err";
     } finally {
-      RUN_HIST = ""; ctl = null; els.stop.hidden = true; refresh();
+      RUN_HIST = ""; RUN_SUFFIX = ""; ctl = null; els.stop.hidden = true; refresh();
     }
   }
 
@@ -967,7 +983,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
   }
   function cells(line) { return line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map(function (c) { return c.trim(); }); }
   function md(src) {
-    var lines = src.replace(/\r/g, "").split("\n"), out = [], i = 0, list = null;
+    var lines = src.replace(/\r/g, "").split("\n"), out = [], i = 0, list = null, card = false, cardNo = 0;
     function closeList() { if (list) { out.push("</" + list + ">"); list = null; } }
     while (i < lines.length) {
       var l = lines[i];
@@ -980,7 +996,13 @@ button.small { padding: 4px 10px; font-size: .82rem; }
         out.push(h + "</tbody></table></div>"); continue;
       }
       var m;
-      if ((m = l.match(/^(#{1,4})\s+(.*)$/))) { closeList(); out.push("<h" + m[1].length + ">" + inline(m[2]) + "</h" + m[1].length + ">"); }
+      if ((m = l.match(/^(#{1,4})\s+(.*)$/))) {
+        closeList();
+        if (m[1].length === 1 && /^ИСТОРИЯ \d+ ИЗ \d+/.test(m[2])) {
+          if (card) out.push("</div>");
+          out.push('<div class="histcard c' + (cardNo % 6) + '"><h1 class="histbanner">' + inline(m[2]) + "</h1>"); card = true; cardNo++;
+        } else out.push("<h" + m[1].length + ">" + inline(m[2]) + "</h" + m[1].length + ">");
+      }
       else if (/^\s*(-{3,}|\*{3,})\s*$/.test(l)) { closeList(); out.push("<hr>"); }
       else if ((m = l.match(/^\s*[-*•]\s+(.*)$/))) { if (list !== "ul") { closeList(); out.push("<ul>"); list = "ul"; } out.push("<li>" + inline(m[1]) + "</li>"); }
       else if ((m = l.match(/^\s*\d+[.)]\s+(.*)$/))) { if (list !== "ol") { closeList(); out.push("<ol>"); list = "ol"; } out.push("<li>" + inline(m[1]) + "</li>"); }
@@ -990,6 +1012,7 @@ button.small { padding: 4px 10px; font-size: .82rem; }
       i++;
     }
     closeList();
+    if (card) out.push("</div>");
     return out.join("\n");
   }
 
