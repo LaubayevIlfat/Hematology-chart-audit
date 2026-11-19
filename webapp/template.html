@@ -205,13 +205,13 @@ fieldset.mode label.check:has(input:checked) { transform: translateY(3px); backg
 .bar > i { position: relative; }
 .bar > i::after { content: "\1F6B6"; position: absolute; right: -14px; top: -24px; font-size: 20px; line-height: 1; animation: stride .6s ease-in-out infinite alternate; }
 /* Разделитель между пациентами: идущий человечек и улыбающийся следующий пациент */
-.patient-sep { position: relative; height: 54px; margin: 2.2em 0 -1em; background: linear-gradient(90deg, var(--c1), var(--c2), var(--c3), var(--hot)) center 34px / 100% 4px no-repeat; border-radius: 2px; overflow: visible; }
-.patient-sep::before { content: "\1F6B6"; position: absolute; left: 0; top: 2px; font-size: 28px; line-height: 1; animation: walk 5s ease-in-out infinite alternate; }
+.patient-sep { position: relative; height: 72px; margin: 2.4em 0 -.8em; background: linear-gradient(90deg, var(--c1), var(--c2), var(--c3), var(--hot)) center 34px / 100% 9px no-repeat, linear-gradient(90deg, var(--hot), var(--c3), var(--c2), var(--c1)) center 52px / 100% 9px no-repeat; border-radius: 5px; overflow: visible; }
+.patient-sep::before { content: "\1F6B6"; position: absolute; left: 0; top: 0; font-size: 28px; line-height: 1; animation: walk 5s ease-in-out infinite alternate; }
 .patient-sep::after { content: "\1F642"; position: absolute; right: 0; top: 0; font-size: 30px; line-height: 1; animation: hop 1.2s ease-in-out infinite; }
 @keyframes walk { from { left: 0; } to { left: calc(100% - 80px); } }
 @keyframes hop { 0%, 100% { transform: translateY(0) rotate(-6deg); } 50% { transform: translateY(-8px) rotate(6deg); } }
 @keyframes stride { from { transform: translateY(0) rotate(-6deg); } to { transform: translateY(-4px) rotate(6deg); } }
-@media print { .patient-sep { display: none; } }
+@media print { .patient-sep::before, .patient-sep::after { display: none; } .patient-sep { height: 26px; margin: 1.6em 0; border-top: 5px double #333; border-bottom: 5px double #333; background: none; } }
 </style>
 
 <div class="wrap">
