@@ -351,6 +351,9 @@ fieldset.mode label.check:has(input:checked) { transform: translateY(3px); backg
       var textBytes = bytes(text || ""), need = Math.min(textBytes + 6000, CAP_FLOOR);
       var baseNames = SET_A.filter(function (n) { return n !== DIG; });
       var base = baseNames.map(function (n) { return "=== ФАЙЛ НАВЫКА: " + n + " ===\n" + (n === CLS ? c.text : PARTS[n]); }).join("\n\n");
+      // Во втором запросе добавляется результат первой части (до ~45 КБ) и набор файлов B: оставляем под них запас.
+      var baseB = SET_B.filter(function (n) { return n !== DIG; }).map(function (n) { return "=== ФАЙЛ НАВЫКА: " + n + " ===\n" + (n === CLS ? c.text : PARTS[n]); }).join("\n\n");
+      need += 45000 + Math.max(0, bytes(baseB) - bytes(base));
       var room = Math.floor(maxBytes * 0.97) - bytes(base) - 6500 - bytes(d.head) - 200;
       d.items.slice().sort(function (a, b) { return b.score - a.score || a.idx - b.idx; }).forEach(function (it) {
         if (room - it.bytes >= need) { chosen.push(it); room -= it.bytes; } else skippedD.push(it.title);
@@ -1048,7 +1051,13 @@ fieldset.mode label.check:has(input:checked) { transform: translateY(3px); backg
     }
   }
 
+  // Если запрос второй части не помещается в лимит, выжимки обзоров из него убираются (правила навыка остаются).
   function promptB(partA) {
+    var p = promptB0(partA);
+    if (bytes(p) > Math.floor(maxBytes * 0.97) && RULES.dig) { var keep = RULES.dig; RULES.dig = ""; p = promptB0(partA); RULES.dig = keep; }
+    return p;
+  }
+  function promptB0(partA) {
     return common(null, SET_B) + "\n\n=== ПЕРВАЯ ЧАСТЬ ОТЧЁТА (уже подготовлена, не переписывай; она содержит хронологию и все находки с привязкой к дням, текст истории болезни здесь не приводится) ===\n" + partA + "\n=== КОНЕЦ ПЕРВОЙ ЧАСТИ ===\n\n=== ЗАДАНИЕ (ЧАСТЬ 2 ИЗ 2) ===\n" +
       "Подготовь ЕДИНЫЙ компактный документ: заключение по шаблону СППВЭ, в которое встроены итоги аудита (отдельного длинного отчёта не будет). Опирайся на рабочие данные первой части. Не добавляй и не удаляй находки, не меняй классы и счётчик. Структура ниже приоритетнее текста шаблона и report-structure.md (если там описан отдельный длинный аналитический отчёт, его не делай). Цель: короткий, наглядный документ (заключение примерно на 2 страницы А4), ничего важного не терять, ничего не повторять. Таблицы и отметки ☒/☐, без длинных абзацев. Структура ответа, заголовки ровно такие:\n" +
       "# ЗАКЛЮЧЕНИЕ ВНУТРЕННЕЙ ЭКСПЕРТИЗЫ КАЧЕСТВА МЕДИЦИНСКОЙ ПОМОЩИ № <номер экспертизы>\n" +
