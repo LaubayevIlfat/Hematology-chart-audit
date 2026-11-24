@@ -212,12 +212,50 @@ fieldset.mode label.check:has(input:checked) { transform: translateY(3px); backg
 @keyframes hop { 0%, 100% { transform: translateY(0) rotate(-6deg); } 50% { transform: translateY(-8px) rotate(6deg); } }
 @keyframes stride { from { transform: translateY(0) rotate(-6deg); } to { transform: translateY(-4px) rotate(6deg); } }
 @media print { .patient-sep::before, .patient-sep::after { display: none; } .patient-sep { height: 26px; margin: 1.6em 0; border-top: 5px double #333; border-bottom: 5px double #333; background: none; } }
+
+/* ===== Темы оформления в духе шаблонов PowerPoint (выбор в шапке, запоминается) ===== */
+:root[data-skin="ion"] { --hero-a:#0b3d3a;--hero-b:#14796d;--hero-c:#1fb59a;--c1:#0e8f7e;--c2:#1f6f8b;--c3:#2d9d4f;--hot:#e07b00;--c1-soft:#ddefed;--c2-soft:#e0ebef;--c3-soft:#e2f1e6;--hot-soft:#fbeddb;--accent:#0e8f7e;--accent-soft:#ddefed;--bg:#eef6f5; }
+@media (prefers-color-scheme: dark) { :root[data-skin="ion"]:not([data-theme="light"]) { --hero-a:#062220;--hero-b:#0b433c;--hero-c:#116455;--c1:#7ac1b8;--c2:#84b0bf;--c3:#8cc99e;--hot:#eeb673;--c1-soft:#102c28;--c2-soft:#13252b;--c3-soft:#162f1e;--hot-soft:#3e280c;--accent:#7ac1b8;--accent-soft:#102c28; --bg: #0f1816; } }
+:root[data-skin="ion"][data-theme="dark"] { --hero-a:#062220;--hero-b:#0b433c;--hero-c:#116455;--c1:#7ac1b8;--c2:#84b0bf;--c3:#8cc99e;--hot:#eeb673;--c1-soft:#102c28;--c2-soft:#13252b;--c3-soft:#162f1e;--hot-soft:#3e280c;--accent:#7ac1b8;--accent-soft:#102c28; --bg: #0f1816; }
+:root[data-skin="facet"] { --hero-a:#2f6b1f;--hero-b:#5aa02c;--hero-c:#9bc53d;--c1:#4c8f1f;--c2:#1f7a8c;--c3:#7a8f1f;--hot:#d9822b;--c1-soft:#e6efe0;--c2-soft:#e0ecef;--c3-soft:#ecefe0;--hot-soft:#faeee1;--accent:#4c8f1f;--accent-soft:#e6efe0;--bg:#f3f7ee; }
+@media (prefers-color-scheme: dark) { :root[data-skin="facet"]:not([data-theme="light"]) { --hero-a:#1a3b11;--hero-b:#325818;--hero-c:#556c22;--c1:#9dc184;--c2:#84b6c0;--c3:#b6c184;--hot:#eaba8a;--c1-soft:#1d2c13;--c2-soft:#13272b;--c3-soft:#272c13;--hot-soft:#3c2916;--accent:#9dc184;--accent-soft:#1d2c13; --bg: #0f1816; } }
+:root[data-skin="facet"][data-theme="dark"] { --hero-a:#1a3b11;--hero-b:#325818;--hero-c:#556c22;--c1:#9dc184;--c2:#84b6c0;--c3:#b6c184;--hot:#eaba8a;--c1-soft:#1d2c13;--c2-soft:#13272b;--c3-soft:#272c13;--hot-soft:#3c2916;--accent:#9dc184;--accent-soft:#1d2c13; --bg: #0f1816; }
+:root[data-skin="retro"] { --hero-a:#7a2e0e;--hero-b:#c4531a;--hero-c:#e8913a;--c1:#c4531a;--c2:#8f3b5f;--c3:#3f7d6b;--hot:#1f6fd1;--c1-soft:#f7e7df;--c2-soft:#efe4e9;--c3-soft:#e4edea;--hot-soft:#e0ebf9;--accent:#c4531a;--accent-soft:#f7e7df;--bg:#faf3ee; }
+@media (prefers-color-scheme: dark) { :root[data-skin="retro"]:not([data-theme="light"]) { --hero-a:#431908;--hero-b:#6c2e0e;--hero-c:#805020;--c1:#dfa081;--c2:#c193a7;--c3:#95b8ae;--hot:#84b0e6;--c1-soft:#381f12;--c2-soft:#2c1921;--c3-soft:#1a2824;--hot-soft:#13253a;--accent:#dfa081;--accent-soft:#381f12; --bg: #0f1816; } }
+:root[data-skin="retro"][data-theme="dark"] { --hero-a:#431908;--hero-b:#6c2e0e;--hero-c:#805020;--c1:#dfa081;--c2:#c193a7;--c3:#95b8ae;--hot:#84b0e6;--c1-soft:#381f12;--c2-soft:#2c1921;--c3-soft:#1a2824;--hot-soft:#13253a;--accent:#dfa081;--accent-soft:#381f12; --bg: #0f1816; }
+:root[data-skin="slice"] { --hero-a:#3b1a6e;--hero-b:#7b3fc4;--hero-c:#d14a9b;--c1:#7b3fc4;--c2:#d14a9b;--c3:#2a7fd1;--hot:#e8890c;--c1-soft:#ede4f7;--c2-soft:#f9e6f1;--c3-soft:#e1edf9;--hot-soft:#fceedd;--accent:#7b3fc4;--accent-soft:#ede4f7;--bg:#f6f1fa; }
+@media (prefers-color-scheme: dark) { :root[data-skin="slice"]:not([data-theme="light"]) { --hero-a:#200e3d;--hero-b:#44236c;--hero-c:#732955;--c1:#b695df;--c2:#e69bc8;--c3:#8ab9e6;--hot:#f2be79;--c1-soft:#281a38;--c2-soft:#3a1d2f;--c3-soft:#16283a;--hot-soft:#402b0f;--accent:#b695df;--accent-soft:#281a38; --bg: #0f1816; } }
+:root[data-skin="slice"][data-theme="dark"] { --hero-a:#200e3d;--hero-b:#44236c;--hero-c:#732955;--c1:#b695df;--c2:#e69bc8;--c3:#8ab9e6;--hot:#f2be79;--c1-soft:#281a38;--c2-soft:#3a1d2f;--c3-soft:#16283a;--hot-soft:#402b0f;--accent:#b695df;--accent-soft:#281a38; --bg: #0f1816; }
+:root[data-skin="divid"] { --hero-a:#101d3b;--hero-b:#1f3a6e;--hero-c:#b8892b;--c1:#1f3a6e;--c2:#8a6a1c;--c3:#2f6f6f;--hot:#b23a3a;--c1-soft:#e0e3eb;--c2-soft:#efeadf;--c3-soft:#e2ebeb;--hot-soft:#f4e3e3;--accent:#1f3a6e;--accent-soft:#e0e3eb;--bg:#f1f3f7; }
+@media (prefers-color-scheme: dark) { :root[data-skin="divid"]:not([data-theme="light"]) { --hero-a:#091020;--hero-b:#11203d;--hero-c:#654b18;--c1:#8493af;--c2:#bfad82;--c3:#8db0b0;--hot:#d59393;--c1-soft:#131925;--c2-soft:#2b2413;--c3-soft:#172525;--hot-soft:#341919;--accent:#8493af;--accent-soft:#131925; --bg: #0f1816; } }
+:root[data-skin="divid"][data-theme="dark"] { --hero-a:#091020;--hero-b:#11203d;--hero-c:#654b18;--c1:#8493af;--c2:#bfad82;--c3:#8db0b0;--hot:#d59393;--c1-soft:#131925;--c2-soft:#2b2413;--c3-soft:#172525;--hot-soft:#341919;--accent:#8493af;--accent-soft:#131925; --bg: #0f1816; }
+/* Оформление шапки: «титульный слайд» каждой темы */
+:root[data-skin="ion"] header.hero { border-left: 16px solid var(--c3); }
+:root[data-skin="facet"] header.hero::after { width: 0; height: 0; border-radius: 0; background: rgba(255,255,255,.16); clip-path: polygon(100% 0, 0 0, 100% 100%); right: 0; top: 0; width: 46%; height: 100%; }
+:root[data-skin="retro"] header.hero { border-bottom: 10px solid var(--hot); }
+:root[data-skin="slice"] header.hero::after { width: 70px; height: 200%; border-radius: 0; background: rgba(255,255,255,.18); transform: rotate(24deg); right: 90px; top: -40px; box-shadow: 120px 0 0 rgba(255,255,255,.1); }
+:root[data-skin="divid"] header.hero { border-top: 8px solid var(--hero-c); outline: 2px solid var(--hero-c); outline-offset: -14px; }
+:root[data-skin="divid"] header.hero::after { display: none; }
+/* Выбор темы */
+.skins { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; position: relative; }
+.skins .label { color: rgba(255,255,255,.9); font-size: .72rem; margin-right: 4px; }
+button.skin { --depth: rgba(0,0,0,.35); display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px 6px 6px; border-radius: 999px; background: rgba(255,255,255,.92); color: #1b2530; border: 2px solid transparent; font-size: .8rem; text-shadow: none; box-shadow: 0 4px 0 var(--depth), inset 0 2px 0 rgba(255,255,255,.8); }
+button.skin i { width: 22px; height: 22px; border-radius: 50%; display: inline-block; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+button.skin[aria-pressed="true"] { border-color: #fff; background: #1b2530; color: #fff; transform: translateY(3px); box-shadow: 0 1px 0 var(--depth); }
+button.skin:hover:not(:disabled) { filter: none; }
+button.skin[data-skin="office"] i { background: linear-gradient(135deg, #0f5c63, #1f6fd1 55%, #7b3fc4); }
+button.skin[data-skin="ion"] i { background: linear-gradient(135deg, #0b3d3a, #14796d 55%, #1fb59a); }
+button.skin[data-skin="facet"] i { background: linear-gradient(135deg, #2f6b1f, #5aa02c 55%, #9bc53d); }
+button.skin[data-skin="retro"] i { background: linear-gradient(135deg, #7a2e0e, #c4531a 55%, #e8913a); }
+button.skin[data-skin="slice"] i { background: linear-gradient(135deg, #3b1a6e, #7b3fc4 55%, #d14a9b); }
+button.skin[data-skin="divid"] i { background: linear-gradient(135deg, #101d3b, #1f3a6e 55%, #b8892b); }
 </style>
 
 <div class="wrap">
   <header class="hero">
     <h1>Аудит истории болезни</h1>
     <p class="lead">Загрузите историю болезни по гематологии в формате Word (.docx) или PDF; можно сразу несколько документов одного пациента. Страница извлечёт текст, закроет типовые идентификаторы и подготовит единый развёрнутый отчёт и проект заключения по правилам навыка hematology-chart-audit.</p>
+    <div class="skins" id="skins" role="group" aria-label="Тема оформления"><span class="label">Шаблон оформления</span><button type="button" class="skin" data-skin="office" aria-pressed="true"><i></i>Офис</button><button type="button" class="skin" data-skin="ion" aria-pressed="false"><i></i>Ион</button><button type="button" class="skin" data-skin="facet" aria-pressed="false"><i></i>Фасет</button><button type="button" class="skin" data-skin="retro" aria-pressed="false"><i></i>Ретроспектива</button><button type="button" class="skin" data-skin="slice" aria-pressed="false"><i></i>Срез</button><button type="button" class="skin" data-skin="divid" aria-pressed="false"><i></i>Дивиденд</button></div>
   </header>
 
   <div class="notice" role="note">
@@ -292,6 +330,22 @@ fieldset.mode label.check:has(input:checked) { transform: translateY(3px); backg
   <p class="foot">Правила: навык hematology-chart-audit (классы находок З1, З2, Н; разделы аудита; системные причины; проект заключения СППВЭ). Это внутренняя форма, не утверждённая МЗ РК. Фамилии, подписи и решение в заключение вносит человек.</p>
 </div>
 
+<script>
+(function () {
+  var root = document.documentElement, group = document.getElementById("skins");
+  function apply(k) {
+    if (k && k !== "office") root.setAttribute("data-skin", k); else root.removeAttribute("data-skin");
+    Array.prototype.forEach.call(group.querySelectorAll("button.skin"), function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-skin") === (k || "office"))); });
+  }
+  var saved = null; try { saved = localStorage.getItem("audit-skin"); } catch (e) {}
+  apply(saved);
+  group.addEventListener("click", function (e) {
+    var b = e.target.closest("button.skin"); if (!b) return;
+    var k = b.getAttribute("data-skin"); apply(k);
+    try { localStorage.setItem("audit-skin", k); } catch (e2) {}
+  });
+})();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script type="application/octet-stream" id="skill-data">__SKILL_JSON__</script>
