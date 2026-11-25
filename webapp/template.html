@@ -250,6 +250,14 @@ button.skin[data-skin="facet"] i { background: linear-gradient(135deg, #2f6b1f, 
 button.skin[data-skin="retro"] i { background: linear-gradient(135deg, #7a2e0e, #c4531a 55%, #e8913a); }
 button.skin[data-skin="slice"] i { background: linear-gradient(135deg, #3b1a6e, #7b3fc4 55%, #d14a9b); }
 button.skin[data-skin="divid"] i { background: linear-gradient(135deg, #101d3b, #1f3a6e 55%, #b8892b); }
+
+/* Реквизиты историй пакета */
+.histfields { display: flex; flex-direction: column; gap: 12px; }
+.hfcard { --hc: #0b6b73; border: 2px solid var(--hc); border-radius: 12px; padding: 10px 14px 14px; background: var(--surface); box-shadow: 0 4px 0 var(--hc), 0 8px 12px rgba(20,30,50,.14); margin-bottom: 4px; }
+.hfcard.c1 { --hc: #7a3b8f; } .hfcard.c2 { --hc: #8a5a00; } .hfcard.c3 { --hc: #2a5fa8; } .hfcard.c4 { --hc: #8f2b4c; } .hfcard.c5 { --hc: #3d7a2e; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .hfcard { --hc: #5cc0c8; } :root:not([data-theme="light"]) .hfcard.c1 { --hc: #c79be0; } :root:not([data-theme="light"]) .hfcard.c2 { --hc: #e0b85c; } :root:not([data-theme="light"]) .hfcard.c3 { --hc: #8cb4f0; } :root:not([data-theme="light"]) .hfcard.c4 { --hc: #f09ab5; } :root:not([data-theme="light"]) .hfcard.c5 { --hc: #8fd07a; } }
+:root[data-theme="dark"] .hfcard { --hc: #5cc0c8; } :root[data-theme="dark"] .hfcard.c1 { --hc: #c79be0; } :root[data-theme="dark"] .hfcard.c2 { --hc: #e0b85c; } :root[data-theme="dark"] .hfcard.c3 { --hc: #8cb4f0; } :root[data-theme="dark"] .hfcard.c4 { --hc: #f09ab5; } :root[data-theme="dark"] .hfcard.c5 { --hc: #8fd07a; }
+.hftitle { font-weight: 600; color: var(--hc); margin-bottom: 8px; font-family: var(--font-display); }
 </style>
 
 <div class="wrap">
@@ -297,6 +305,7 @@ button.skin[data-skin="divid"] i { background: linear-gradient(135deg, #101d3b, 
     </div>
     <div class="status" id="textInfo"></div>
     <div id="docs" class="docs" hidden></div>
+    <div id="histFields" class="histfields" hidden></div>
     <div class="actions"><button id="cleanBtn" class="ghost" type="button">Убрать лишнее</button><button id="clearText" class="ghost" type="button">Очистить текст</button></div>
     <fieldset class="mode" id="modeBox" hidden>
       <legend class="label">Порядок экспертизы для нескольких документов</legend>
@@ -440,7 +449,7 @@ button.skin[data-skin="divid"] i { background: linear-gradient(135deg, #101d3b, 
     textInfo: $("textInfo"), confirm: $("confirm"), run: $("run"), stop: $("stop"), runStatus: $("runStatus"),
     s3: $("s3"), phase: $("phase"), bar: $("barFill"), report: $("report"), counters: $("counters"),
     saveRow: $("saveRow"), saveStatus: $("saveStatus"), expNo: $("expNo"), histNo: $("histNo") };
-  var sample = null, downloads = null, ctl = null, fullText = "", RUN_HIST = "", RUN_SUFFIX = "";
+  var sample = null, downloads = null, ctl = null, fullText = "", RUN_HIST = "", RUN_SUFFIX = "", RUN_EXP = "", HF = {}, HF_SIG = "";
 
   // ---------- Capabilities ----------
   (async function () {
@@ -745,6 +754,40 @@ button.skin[data-skin="divid"] i { background: linear-gradient(135deg, #101d3b, 
     var note = document.createElement("div"); note.className = "status" + (conflicts && !batch ? " err" : "");
     note.textContent = batch ? ("Пакетный режим: найдено историй " + groups.length + " (документы сгруппированы по ИИН, № истории болезни, ФИО с датой рождения; документ без этих данных " + (modeTouched ? "считается отдельной историей" : "относится к предыдущему документу") + "). Запросов к Claude: " + (groups.length * 2 + (($("batchSummary") && $("batchSummary").checked) ? 1 : 0)) + "." + (groups.length > 10 ? " Историй больше 10: разделите пакет." : "")) : conflicts ? "Похоже, загружены документы разных пациентов. Исключите лишние: экспертиза проводится по одной истории болезни." : "Совпадение пациента проверено по ИИН, № истории болезни, дате рождения и ФИО в исходных файлах (до закрытия). Эти данные в запрос не уходят.";
     box.appendChild(note);
+    renderHistFields(batch ? groups : []);
+  }
+  // Реквизиты каждой истории пакета: вносятся вручную, попадают в карточку, оглавление и заключение.
+  function hfKey(g) { return g.map(function (d) { return d.n; }).join(","); }
+  function detectedHist(g) { return Object.keys((META[+g[0].n] || {}).hist || {})[0] || ""; }
+  function hfValues(g, k) {
+    var v = HF[hfKey(g)] || {};
+    return { exp: v.exp != null ? v.exp : "", hist: v.hist != null ? v.hist : detectedHist(g), k: k };
+  }
+  function renderHistFields(groups) {
+    var box = $("histFields");
+    if (groups.length < 2) { box.hidden = true; box.innerHTML = ""; HF_SIG = ""; return; }
+    var sig = groups.map(hfKey).join("|");
+    box.hidden = false;
+    if (sig === HF_SIG) return;
+    HF_SIG = sig; box.innerHTML = "";
+    var h = document.createElement("div"); h.className = "label"; h.textContent = "Реквизиты историй болезни пакета (попадут в заключение каждого пациента)";
+    box.appendChild(h);
+    groups.forEach(function (g, gi) {
+      var key = hfKey(g), val = hfValues(g, gi + 1);
+      var card = document.createElement("div"); card.className = "hfcard c" + (gi % 6);
+      var t = document.createElement("div"); t.className = "hftitle"; t.textContent = "История " + (gi + 1) + " · документы " + key.replace(/,/g, ", ");
+      var row = document.createElement("div"); row.className = "row";
+      function field(id, label, value, ph, name) {
+        var f = document.createElement("div"); f.className = "field";
+        var l = document.createElement("label"); l.setAttribute("for", id); l.textContent = label;
+        var i = document.createElement("input"); i.type = "text"; i.id = id; i.autocomplete = "off"; i.value = value; i.placeholder = ph;
+        i.addEventListener("input", function () { var o = HF[key] || (HF[key] = {}); o[name] = i.value.trim(); });
+        f.appendChild(l); f.appendChild(i); return f;
+      }
+      row.appendChild(field("hf-exp-" + (gi + 1), "Номер экспертизы", val.exp, els.expNo.value.trim() ? els.expNo.value.trim() + "/" + (gi + 1) : "вносит человек", "exp"));
+      row.appendChild(field("hf-hist-" + (gi + 1), "Номер истории болезни", val.hist, "определяется из текста, если есть", "hist"));
+      card.appendChild(t); card.appendChild(row); box.appendChild(card);
+    });
   }
   // Убирает номера страниц, декоративные линии и повторные абзацы; длинный дословный повтор заменяется пометкой, чтобы совпадение дневников оставалось видно.
   function cleanText(t) {
@@ -875,7 +918,7 @@ button.skin[data-skin="divid"] i { background: linear-gradient(135deg, #101d3b, 
       "- Сокращения. В тексте заключения и отчёта не допускай нестандартных, жаргонных и двусмысленных сокращений (например «б-ной», «д-з», «р-р», «лаб.», «тер.», «т.к.», «т.е.», «п/о», «ХТ» вместо химиотерапии, «ГК» вместо глюкокортикоидов, «АБ» вместо антибиотик, «КТ» без пояснения контекста, самодельные аббревиатуры). Пиши слова полностью. Допустимы только общепринятые сокращения: единицы измерения (г/дл, мг/кг, ×10⁹/л, мм рт. ст.), «в/в», «п/к», «ЭКГ», «МКБ-10», «ЕК ФСМС», «СППВЭ», коды находок З1/З2/Н и Д0/Д+N; прочие устоявшиеся клинические аббревиатуры (ОЛЛ, ОМЛ, ХМЛ, ММ, ХЛЛ, КМ, ТГСК, ЛДГ, СОЭ и подобные) при первом упоминании расшифруй полностью, дальше используй сокращение. Не используй эмодзи и разговорные обороты.",
       "- Отвечай по-русски, оформляй markdown: заголовки #, таблицы, списки. Пиши все коды находок в виде З1-01, З2-01, Н-01.",
       (chart !== null && /^=== ДОКУМЕНТ \d+ ===$/m.test(chart.text)) ? "- Текст состоит из нескольких документов ОДНОГО пациента (например, амбулаторная карта, стационар, выписки, лабораторные и инструментальные протоколы), разделённых строками «=== ДОКУМЕНТ N ===». Это один случай и одна экспертиза: собери единую хронологию по всем документам, сопоставь данные между ними, расхождения между документами (даты, дозы, диагнозы, коды, масса) оформляй как находки по общим правилам, находки не группируй по документам и не дублируй одну и ту же ошибку из разных документов. В шапке перечисли состав материалов (какие документы представлены, каких не хватает); в находках ссылайся на документ как «док. N» и день Д…, N — только номер из разделителя." : "",
-      "- Реквизиты: номер экспертизы: " + (els.expNo.value.trim() ? (els.expNo.value.trim() + (RUN_SUFFIX ? "/" + RUN_SUFFIX : "")) : "не присвоен (вносит человек)") + "; дата проверки: " + today() + "; № истории болезни: " + (RUN_HIST || els.histNo.value.trim() || "не указан") + ".",
+      "- Реквизиты: номер экспертизы: " + (RUN_EXP ? RUN_EXP : els.expNo.value.trim() ? (els.expNo.value.trim() + (RUN_SUFFIX ? "/" + RUN_SUFFIX : "")) : "не присвоен (вносит человек)") + "; дата проверки: " + today() + "; № истории болезни: " + (RUN_HIST || els.histNo.value.trim() || "не указан") + ".",
       "",
       chart === null ? "" : ("=== ТЕКСТ ИСТОРИИ БОЛЕЗНИ" + (chart.digest ? " (СЖАТАЯ ВЫЖИМКА: исходный текст сокращён по частям; дозы, время и значения сохранены дословно, но отдельные детали могли быть опущены; не делай выводов об отсутствии записи по выжимке, помечай такие случаи «требует уточнения»)" : "") + " ===\n" + chart.text + "\n=== КОНЕЦ ТЕКСТА ИСТОРИИ БОЛЕЗНИ ===")
     ].join("\n");
@@ -1036,13 +1079,15 @@ button.skin[data-skin="divid"] i { background: linear-gradient(135deg, #101d3b, 
       for (var gi = 0; gi < N; gi++) {
         var g = groups[gi], label = "История " + (gi + 1) + " из " + N;
         var text = g.length === 1 ? g[0].text : g.map(function (d) { return "=== ДОКУМЕНТ " + d.n + " ===\n" + d.text; }).join("\n\n");
-        var hist = Object.keys((META[+g[0].n] || {}).hist || {})[0];
+        var hv = hfValues(g, gi + 1), hist = hv.hist || detectedHist(g);
+        var expG = hv.exp || (els.expNo.value.trim() ? els.expNo.value.trim() + "/" + (gi + 1) : "");
+        RUN_EXP = expG;
         RUN_HIST = hist ? hist : "см. текст истории (" + label + ")";
         prepareRules(text);
         RUN_SUFFIX = String(gi + 1);
         var docNums = g.map(function (d) { return d.n; }).join(", ");
-        metaRows.push({ k: gi + 1, hist: hist || "", docs: docNums, counter: "" });
-        var ckey = hashStr(text), hc = "# " + label.toUpperCase() + " · " + (hist ? "№ истории болезни: " + hist + " · " : "") + "документы: " + docNums + "\n\n";
+        metaRows.push({ k: gi + 1, hist: hist || "", exp: expG, docs: docNums, counter: "" });
+        var ckey = hashStr(text + "|" + expG + "|" + hist), hc = "# " + label.toUpperCase() + " · " + (expG ? "№ экспертизы: " + expG + " · " : "") + (hist ? "№ истории болезни: " + hist + " · " : "") + "документы: " + docNums + "\n\n";
         if (BATCH_CACHE[ckey]) {
           var c0 = BATCH_CACHE[ckey];
           reports.push(hc + c0.tail.split("{L}").join(label) + c0.body);
@@ -1084,8 +1129,8 @@ button.skin[data-skin="divid"] i { background: linear-gradient(135deg, #101d3b, 
       }
       RUN_HIST = "пакет из " + N + " историй";
       function pk(c, key) { var m = (c || "").match(new RegExp(key + "\\s*=\\s*(\\d+)")); return m ? m[1] : "?"; }
-      var overview = "# ПАКЕТ: " + N + " " + (N % 10 === 1 && N !== 11 ? "ИСТОРИЯ" : "ИСТОРИИ") + " (ОГЛАВЛЕНИЕ)\n\nКаждое заключение ниже оформлено отдельной цветной карточкой «ИСТОРИЯ k ИЗ " + N + "»; номер экспертизы — с суффиксом /k.\n\n| № | № истории болезни | Документы | З1 | З2 | Н |\n|---|---|---|---|---|---|\n" +
-        metaRows.map(function (r) { return "| " + r.k + " | " + (r.hist || "—") + " | " + r.docs + " | " + pk(r.counter, "З1") + " | " + pk(r.counter, "З2") + " | " + pk(r.counter, "Н") + " |"; }).join("\n") + "\n\n---\n\n";
+      var overview = "# ПАКЕТ: " + N + " " + (N % 10 === 1 && N !== 11 ? "ИСТОРИЯ" : "ИСТОРИИ") + " (ОГЛАВЛЕНИЕ)\n\nКаждое заключение ниже оформлено отдельной цветной карточкой «ИСТОРИЯ k ИЗ " + N + "»; номер экспертизы — с суффиксом /k.\n\n| № | № экспертизы | № истории болезни | Документы | З1 | З2 | Н |\n|---|---|---|---|---|---|---|\n" +
+        metaRows.map(function (r) { return "| " + r.k + " | " + (r.exp || "—") + " | " + (r.hist || "—") + " | " + r.docs + " | " + pk(r.counter, "З1") + " | " + pk(r.counter, "З2") + " | " + pk(r.counter, "Н") + " |"; }).join("\n") + "\n\n---\n\n";
       var withSum = !!($("batchSummary") && $("batchSummary").checked);
       if (withSum) {
         ph("Сводный отчёт по пакету.");
@@ -1106,7 +1151,7 @@ button.skin[data-skin="divid"] i { background: linear-gradient(135deg, #101d3b, 
       if (kept) { fullText = kept; render(fullText); els.saveRow.hidden = false; }
       els.phase.textContent = errText(e); els.phase.className = "status err";
     } finally {
-      RUN_HIST = ""; RUN_SUFFIX = ""; ctl = null; els.stop.hidden = true; refresh();
+      RUN_HIST = ""; RUN_SUFFIX = ""; RUN_EXP = ""; ctl = null; els.stop.hidden = true; refresh();
     }
   }
 
